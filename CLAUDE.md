@@ -69,11 +69,9 @@ type: feat, fix, refactor, docs, test, chore
 ---
 ```
 
-### チャンネル
-- `mei_to_yuki.md`: Issue割り当て
-- `yuki_to_priya.md`: PR通知
-- `priya_to_yuki.md`: レビュー結果
-- `priya_to_mei.md`: エスカレーション
+### チャンネル（非推奨）
+
+> **Note**: ファイルベースの通信チャンネルは廃止されました。現在はチームチャットで直接コミュニケーションを行います。
 
 ## エスカレーションルール
 
