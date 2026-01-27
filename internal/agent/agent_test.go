@@ -126,6 +126,10 @@ func TestBuildSystemPrompt(t *testing.T) {
 		if prompt == "" {
 			t.Error("prompt is empty")
 		}
+		// Should contain embedded rules
+		if !contains(prompt, "MAXAM") {
+			t.Errorf("prompt should contain embedded rules")
+		}
 		// Should contain both contents
 		if !contains(prompt, sharedContent) {
 			t.Errorf("prompt should contain shared content")
@@ -147,14 +151,18 @@ func TestBuildSystemPrompt(t *testing.T) {
 		}
 	})
 
-	t.Run("with no files", func(t *testing.T) {
+	t.Run("with no external files", func(t *testing.T) {
 		emptyDir, _ := os.MkdirTemp("", "empty")
 		defer os.RemoveAll(emptyDir)
 
 		r := NewRunner("Test", emptyDir, "")
-		_, err := r.buildSystemPrompt()
-		if err == nil {
-			t.Error("expected error when no CLAUDE.md found")
+		prompt, err := r.buildSystemPrompt()
+		// Should succeed with embedded rules only
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if !contains(prompt, "MAXAM") {
+			t.Errorf("prompt should contain embedded rules")
 		}
 	})
 }

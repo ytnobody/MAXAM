@@ -33,13 +33,18 @@ func NewRunner(name, workDir, claudeMDDir string) *Runner {
 func (r *Runner) buildSystemPrompt() (string, error) {
 	var parts []string
 
-	// Read shared CLAUDE.md
+	// 1. Embedded common rules (always present)
+	if EmbeddedRules != "" {
+		parts = append(parts, EmbeddedRules)
+	}
+
+	// 2. Project-specific CLAUDE.md (optional)
 	sharedPath := filepath.Join(r.WorkDir, "CLAUDE.md")
 	if data, err := os.ReadFile(sharedPath); err == nil {
 		parts = append(parts, string(data))
 	}
 
-	// Read agent-specific CLAUDE.md
+	// 3. Agent-specific CLAUDE.md (optional)
 	if r.ClaudeMDDir != "" {
 		agentPath := filepath.Join(r.ClaudeMDDir, "CLAUDE.md")
 		if data, err := os.ReadFile(agentPath); err == nil {
