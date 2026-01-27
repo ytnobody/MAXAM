@@ -31,119 +31,80 @@ go build -o bin/orchestrator ./cmd/orchestrator
 
 ## 使い方
 
-### CLI モード
-
-```bash
-# タスクをYukiに依頼
-./bin/maxam task "ログイン機能を実装して"
-
-# レビューサイクル実行 (Yuki実装 → Priyaレビュー)
-./bin/maxam review "Add関数のユニットテストを作成して"
-
-# 対話モード（情報不足時は質問してくれる）
-./bin/maxam chat yuki   # Yukiと対話
-./bin/maxam chat mei    # Meiと対話
-./bin/maxam chat team   # チーム全体と対話（Meiが窓口、@yukiなどでメンション可）
-
-# 単発の質問
-./bin/maxam ask mei "このプロジェクトの状況を教えて"
-./bin/maxam ask yuki "キャッシュの実装方法は？"
-./bin/maxam ask priya "このコードにセキュリティ上の問題はある？"
-./bin/maxam ask amara "最近の傾向を分析して"
-
-# Amaraの週次分析を実行
-./bin/maxam analyze
-
-# チームステータス確認
-./bin/maxam status
-```
-
-### サーバーモード
+### チームチャット（メイン）
 
 ```bash
 ./bin/orchestrator
 ```
 
-サーバーモードでは以下が有効になります：
-- GitHub Webhook受信 (`:8080/webhook`)
-- ヘルスチェック (`:8080/health`)
-- ステータスAPI (`:8080/status`)
-- comms/ディレクトリの監視
-- Slack連携（環境変数設定時）
+起動すると、チームとチャットできます：
 
-## 環境変数
+```
+MAXAM Team Chat
+===============
 
-### GitHub連携
+チームメンバー:
+  Mei    - PM/要件定義 (デフォルト)
+  Yuki   - 実装/インフラ (@yuki)
+  Priya  - レビュー/QA (@priya)
+  Amara  - 分析 (@amara)
+
+使い方: 普通に話しかけてください。@yukiなどでメンション可。
+終了: exit
+--------------------------------------------------
+
+You: ログイン機能作りたいんだけど
+
+Mei: いいですね！いくつか確認させてください：
+1. 認証方式は？（JWT / セッション / OAuth）
+2. ...
+
+You: @yuki JWTでお願い
+
+Yuki: 了解。JWT認証で実装する。
+...
+```
+
+### CLIコマンド
 
 ```bash
-export GITHUB_TOKEN="ghp_..."
-export GITHUB_OWNER="ytnobody"
-export GITHUB_REPO="MAXAM"
-export WEBHOOK_SECRET="your-webhook-secret"
+# 対話モード
+./bin/maxam chat yuki    # Yukiと1対1で対話
+./bin/maxam chat team    # チーム全体と対話
+
+# 単発コマンド
+./bin/maxam task "ログイン機能を実装して"
+./bin/maxam review "テストを書いて"
+./bin/maxam ask priya "このコード大丈夫？"
+./bin/maxam analyze      # Amaraの分析
+./bin/maxam status       # ステータス確認
 ```
 
-### Slack連携
+## エージェントへの指示
 
-```bash
-export SLACK_BOT_TOKEN="xoxb-..."
-export SLACK_APP_TOKEN="xapp-..."
-export SLACK_WAIT_SECONDS=120  # メッセージ待機時間（デフォルト120秒）
+### メンション
+
+| メンション | エージェント |
+|-----------|-------------|
+| `@yuki` / `ゆき` / `実装` | Yuki |
+| `@priya` / `プリヤ` / `レビュー` | Priya |
+| `@amara` / `アマラ` / `分析` | Amara |
+| なし | Mei (デフォルト) |
+
+### 自然に話しかける
+
+```
+You: 新しいAPI作りたい
+Mei: どんなAPIですか？詳しく教えてください。
+
+You: ユーザー一覧を返すGET /users
+Mei: 了解です。Yukiに実装を依頼しますね。@yuki、お願いできる？
+
+You: @yuki お願い
+Yuki: 了解。GET /users 作る。DBスキーマはある？
 ```
 
-## エージェントとのコミュニケーション
-
-### Slack経由（サーバーモード時）
-
-Slackで特定のエージェントにメンションできます：
-
-```
-@yuki このAPIの実装方法を教えて
-@priya このコードをレビューして
-@amara 最近の傾向を分析して
-@mei 要件を整理して
-```
-
-日本語名でもOK：
-```
-ゆき、この関数を最適化して
-プリヤ、セキュリティチェックお願い
-```
-
-メンションがない場合は、デフォルトでMei（PM）が対応します。
-
-### Slackなし（comms/ディレクトリ経由）
-
-サーバーモードでSlackを使わない場合、`comms/`ディレクトリにMarkdownファイルを作成してエージェントに指示できます。
-
-**ファイル命名規則**: `{送信元}_to_{宛先}.md`
-
-```bash
-# Yukiに実装を依頼
-cat > comms/user_to_yuki.md << 'EOF'
-## [2026-01-27 12:00] From: user To: yuki
-
-### Subject
-ログイン機能の実装
-
-### Body
-ユーザー認証機能を実装してください。
-- メールアドレスとパスワードで認証
-- JWTトークンを発行
-
-### Action Required
-実装してPRを作成
-
----
-EOF
-```
-
-オーケストレーターがファイルの変更を検知し、該当エージェントに処理を依頼します。
-
-**利用可能なチャンネル**:
-- `user_to_mei.md` - Meiに要件相談
-- `user_to_yuki.md` - Yukiに実装依頼
-- `user_to_priya.md` - Priyaにレビュー依頼
-- `user_to_amara.md` - Amaraに分析依頼
+情報が足りないときはエージェントが質問してきます。
 
 ## ディレクトリ構造
 
@@ -151,77 +112,35 @@ EOF
 MAXAM/
 ├── cmd/
 │   ├── maxam/          # CLIツール
-│   └── orchestrator/   # サーバーモード
+│   └── orchestrator/   # チームチャット
 ├── internal/
 │   ├── agent/          # エージェント管理
-│   ├── comms/          # エージェント間通信
-│   ├── github/         # GitHub API連携
-│   ├── logger/         # ログシステム
-│   ├── mcp/            # MCPプロトコル
-│   ├── slack/          # Slack連携
-│   └── workflow/       # ワークフロー（レビューサイクル等）
+│   ├── workflow/       # ワークフロー
+│   └── logger/         # ログ
 ├── agents/             # 各エージェントのCLAUDE.md
 │   ├── mei/
 │   ├── yuki/
 │   ├── priya/
 │   └── amara/
-├── comms/              # エージェント間メッセージ
 ├── logs/               # 実行ログ
 └── CLAUDE.md           # 共通規約
 ```
 
 ## ワークフロー
 
-### レビューサイクル
+### 基本フロー
 
 ```
-1. タスク投入
-      ↓
-2. Yuki が実装
-      ↓
-3. Priya がレビュー
-      ↓
-   ┌─ APPROVED → 完了
-   │
-   └─ Request Changes
-         ↓
-      ┌─ [MINOR] → Yukiが修正 → 3へ戻る
-      │
-      └─ [DESIGN]/[REQUIREMENTS]/[SEC-CRITICAL]
-            ↓
-         Meiへエスカレーション
+ユーザー → Mei（要件整理）→ Yuki（実装）→ Priya（レビュー）
+                ↑                              │
+                └──────── フィードバック ───────┘
 ```
 
-### 自己改善サイクル
+### 自己改善
 
 ```
-ログ蓄積 → Amara週次分析 → CLAUDE.md更新提案 → 適用
+ログ蓄積 → Amara分析 → CLAUDE.md更新
 ```
-
-## 通信規約
-
-エージェント間の通信は `comms/` ディレクトリのMarkdownファイルで行われます。
-
-```markdown
-## [2026-01-27 12:00] From: yuki To: priya
-
-### Subject
-PR Review Request
-
-### Body
-実装内容...
-
-### Action Required
-レビューお願いします
-
----
-```
-
-## エスカレーションルール
-
-- 同一PR差し戻し3回超過 → Meiへエスカレーション
-- `[SEC-CRITICAL]` タグ → 即ブロック、Meiへ
-- 要件不明確 → Mei経由で顧客確認
 
 ## ライセンス
 
