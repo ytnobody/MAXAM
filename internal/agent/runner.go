@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ytnobody/MAXAM/internal/config"
 )
 
 // Runner executes Claude Code with agent persona
@@ -140,20 +142,53 @@ type Agents struct {
 	runners map[string]*Runner
 }
 
-// NewAgents creates the agent team
+// NewAgents creates the agent team from ~/.maxam/agents/
 func NewAgents(workDir string) *Agents {
-	agentsDir := filepath.Join(workDir, "agents")
+	// Initialize ~/.maxam/ if needed
+	embeddedAgents, _ := config.GetEmbeddedAgents()
+	config.EnsureInitialized(embeddedAgents)
+
+	// Get agents directory (~/.maxam/agents/)
+	agentsDir, err := config.AgentsDir()
+	if err != nil {
+		// Fallback to local agents dir
+		agentsDir = filepath.Join(workDir, "agents")
+	}
+
+	// Load agent config
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+
+	runners := make(map[string]*Runner)
+	agentNames := map[string]string{
+		"mei":    "Mei Chen",
+		"yuki":   "Yuki Tanaka",
+		"rin":    "Rin Sato",
+		"shiori": "Shiori Tanaka",
+		"priya":  "Priya Sharma",
+		"amara":  "Amara Okonkwo",
+	}
+
+	// Create runners for configured agents
+	for _, agentCfg := range cfg.Agents {
+		name := agentCfg.Name
+		fullName := agentNames[name]
+		if fullName == "" {
+			fullName = name // Use agent name if not in map
+		}
+
+		agentDir := filepath.Join(agentsDir, name)
+		// Only add if CLAUDE.md exists
+		if _, err := os.Stat(filepath.Join(agentDir, "CLAUDE.md")); err == nil {
+			runners[name] = NewRunner(fullName, workDir, agentDir)
+		}
+	}
 
 	return &Agents{
 		workDir: workDir,
-		runners: map[string]*Runner{
-			"yuki":   NewRunner("Yuki Tanaka", workDir, filepath.Join(agentsDir, "yuki")),
-			"priya":  NewRunner("Priya Sharma", workDir, filepath.Join(agentsDir, "priya")),
-			"mei":    NewRunner("Mei Chen", workDir, filepath.Join(agentsDir, "mei")),
-			"amara":  NewRunner("Amara Okonkwo", workDir, filepath.Join(agentsDir, "amara")),
-			"rin":    NewRunner("Rin Sato", workDir, filepath.Join(agentsDir, "rin")),
-			"shiori": NewRunner("Shiori Tanaka", workDir, filepath.Join(agentsDir, "shiori")),
-		},
+		runners: runners,
 	}
 }
 

@@ -1,0 +1,103 @@
+// Package config manages MAXAM configuration in ~/.maxam/
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config represents the MAXAM configuration
+type Config struct {
+	Version string        `yaml:"version"`
+	Agents  []AgentConfig `yaml:"agents"`
+}
+
+// AgentConfig represents an agent configuration
+type AgentConfig struct {
+	Name string `yaml:"name"`
+	Role string `yaml:"role"`
+}
+
+// DefaultConfig returns the default configuration
+func DefaultConfig() *Config {
+	return &Config{
+		Version: "1",
+		Agents: []AgentConfig{
+			{Name: "mei", Role: "PM / 要件定義"},
+			{Name: "yuki", Role: "バックエンド / インフラ"},
+			{Name: "rin", Role: "フロントエンド"},
+			{Name: "shiori", Role: "テスト / ドキュメント"},
+			{Name: "priya", Role: "レビュー / セキュリティ / QA"},
+			{Name: "amara", Role: "分析"},
+		},
+	}
+}
+
+// ConfigDir returns the path to ~/.maxam/
+func ConfigDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("get home dir: %w", err)
+	}
+	return filepath.Join(home, ".maxam"), nil
+}
+
+// AgentsDir returns the path to ~/.maxam/agents/
+func AgentsDir() (string, error) {
+	configDir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, "agents"), nil
+}
+
+// Load reads configuration from ~/.maxam/config.yaml
+func Load() (*Config, error) {
+	configDir, err := ConfigDir()
+	if err != nil {
+		return nil, err
+	}
+
+	configPath := filepath.Join(configDir, "config.yaml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return DefaultConfig(), nil
+		}
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+// Save writes configuration to ~/.maxam/config.yaml
+func Save(cfg *Config) error {
+	configDir, err := ConfigDir()
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	configPath := filepath.Join(configDir, "config.yaml")
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+
+	return nil
+}
