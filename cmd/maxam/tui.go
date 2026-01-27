@@ -93,8 +93,8 @@ type agentResponseMsg struct {
 	content    string
 	elapsed    time.Duration
 	err        error
-	nextAgent  string // 次に発言するエージェント（連鎖用）
-	chainDepth int    // 連鎖の深さ
+	nextAgents []string // 次に発言するエージェント（連鎖用、複数対応）
+	chainDepth int      // 連鎖の深さ
 }
 
 // analysisTickMsg は1時間ごとの軽量分析トリガー
@@ -337,10 +337,18 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.updateViewport()
 
-		// 次のエージェントがいれば連鎖（並列対応）
-		if msg.nextAgent != "" && !m.processingAgents[msg.nextAgent] {
-			m.processingAgents[msg.nextAgent] = true
-			return m, m.runAgentAsync(msg.content, msg.nextAgent, msg.chainDepth+1)
+		// 次のエージェントがいれば連鎖（複数並列対応）
+		if len(msg.nextAgents) > 0 {
+			var cmds []tea.Cmd
+			for _, nextAgent := range msg.nextAgents {
+				if !m.processingAgents[nextAgent] {
+					m.processingAgents[nextAgent] = true
+					cmds = append(cmds, m.runAgentAsync(msg.content, nextAgent, msg.chainDepth+1))
+				}
+			}
+			if len(cmds) > 0 {
+				return m, tea.Batch(cmds...)
+			}
 		}
 
 		return m, nil
@@ -383,10 +391,10 @@ func (m *tuiModel) runAgentAsync(input string, targetAgent string, depth int) te
 
 		result = strings.TrimSpace(result)
 
-		// 返答内の他エージェントへのメンションを検出
-		nextAgent := ""
+		// 返答内の他エージェントへのメンションを検出（複数対応）
+		var nextAgents []string
 		if depth < maxChainDepth && err == nil {
-			nextAgent = detectAgentMention(result, agentName)
+			nextAgents = detectAgentMentions(result, agentName)
 		}
 
 		return agentResponseMsg{
@@ -394,7 +402,7 @@ func (m *tuiModel) runAgentAsync(input string, targetAgent string, depth int) te
 			content:    result,
 			elapsed:    elapsed,
 			err:        err,
-			nextAgent:  nextAgent,
+			nextAgents: nextAgents,
 			chainDepth: depth,
 		}
 	}
@@ -431,12 +439,12 @@ func (m *tuiModel) buildMeiInterventionPrompt() string {
 	return sb.String()
 }
 
-// detectAgentMention は返答内の他エージェントへのメンションを検出
-func detectAgentMention(text string, currentAgent string) string {
+// detectAgentMentions は返答内の他エージェントへのメンションを複数検出
+func detectAgentMentions(text string, currentAgent string) []string {
 	lower := strings.ToLower(text)
 
 	// 他のエージェントへの呼びかけパターンを検出
-	agents := []struct {
+	agentPatterns := []struct {
 		name     string
 		patterns []string
 	}{
@@ -444,20 +452,30 @@ func detectAgentMention(text string, currentAgent string) string {
 		{"priya", []string{"@priya", "priya、", "priya,", "プリヤ、", "プリヤ,", "priyaさん", "プリヤさん", "priyaに", "プリヤに", "priyaお願い", "プリヤお願い", "レビューお願い", "チェックお願い"}},
 		{"amara", []string{"@amara", "amara、", "amara,", "アマラ、", "アマラ,", "amaraさん", "アマラさん", "amaraに", "アマラに", "amaraお願い", "アマラお願い", "分析お願い"}},
 		{"mei", []string{"@mei", "mei、", "mei,", "メイ、", "メイ,", "meiさん", "メイさん", "meiに", "メイに", "meiお願い", "メイお願い"}},
+		{"rin", []string{"@rin", "rin、", "rin,", "りん、", "りん,", "rinさん", "りんさん", "rinに", "りんに", "rinお願い", "りんお願い"}},
+		{"shiori", []string{"@shiori", "shiori、", "shiori,", "しおり、", "しおり,", "shioriさん", "しおりさん", "shioriに", "しおりに", "shioriお願い", "しおりお願い"}},
 	}
 
-	for _, a := range agents {
+	var result []string
+	seen := make(map[string]bool)
+
+	for _, a := range agentPatterns {
 		if a.name == currentAgent {
 			continue // 自分自身へのメンションは無視
 		}
+		if seen[a.name] {
+			continue // 重複は除外
+		}
 		for _, pattern := range a.patterns {
 			if strings.Contains(lower, pattern) {
-				return a.name
+				result = append(result, a.name)
+				seen[a.name] = true
+				break
 			}
 		}
 	}
 
-	return ""
+	return result
 }
 
 func (m *tuiModel) updateViewport() {
@@ -807,7 +825,7 @@ func (m *tuiModel) runLightweightAnalysis() tea.Cmd {
 			content:    result,
 			elapsed:    elapsed,
 			err:        err,
-			nextAgent:  "",
+			nextAgents: nil,
 			chainDepth: 0,
 		}
 	}
