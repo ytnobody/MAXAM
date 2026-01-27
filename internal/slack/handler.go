@@ -7,25 +7,22 @@ import (
 	"time"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
-	"github.com/ytnobody/MAXAM/internal/comms"
 	"github.com/ytnobody/MAXAM/internal/logger"
 )
 
 // Handler processes Slack messages with the AI team
 type Handler struct {
-	client  *Client
-	agents  *agent.Agents
-	router  *comms.Router
-	logMgr  *logger.Manager
+	client *Client
+	agents *agent.Agents
+	logMgr *logger.Manager
 }
 
 // NewHandler creates a new Slack message handler
-func NewHandler(client *Client, agents *agent.Agents, router *comms.Router, logMgr *logger.Manager) *Handler {
+func NewHandler(client *Client, agents *agent.Agents, logMgr *logger.Manager) *Handler {
 	return &Handler{
-		client:  client,
-		agents:  agents,
-		router:  router,
-		logMgr:  logMgr,
+		client: client,
+		agents: agents,
+		logMgr: logMgr,
 	}
 }
 
@@ -167,12 +164,6 @@ func (h *Handler) handleDirectMention(ctx context.Context, agentName, input stri
 
 // handleMeiDefault handles messages through Mei (default behavior)
 func (h *Handler) handleMeiDefault(ctx context.Context, customerInput string) (string, string, error) {
-	h.router.Send("slack", "mei", &comms.Message{
-		Subject: "Customer inquiry",
-		Body:    customerInput,
-		Action:  "Analyze and respond",
-	})
-
 	mei := h.agents.Mei()
 	prompt := fmt.Sprintf(`あなたはMAXAMチームのPM、Mei Chenです。
 顧客からの問い合わせに対応してください。
@@ -252,13 +243,6 @@ func (h *Handler) handleTeamInstruction(instruction string, channel, threadTS st
 	if strings.Contains(instructionLower, "yuki") ||
 		strings.Contains(instructionLower, "実装") ||
 		strings.Contains(instructionLower, "implement") {
-
-		// Send to Yuki via comms
-		h.router.Send("mei", "yuki", &comms.Message{
-			Subject: "Implementation task from customer request",
-			Body:    instruction,
-			Action:  "Please implement",
-		})
 
 		// Notify in Slack
 		h.client.PostMessageAsAgent(channel, "Mei Chen",

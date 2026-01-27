@@ -8,24 +8,21 @@ import (
 	"time"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
-	"github.com/ytnobody/MAXAM/internal/comms"
 	"github.com/ytnobody/MAXAM/internal/logger"
 )
 
 // ReviewCycle represents a Yuki -> Priya review cycle
 type ReviewCycle struct {
 	agents *agent.Agents
-	router *comms.Router
 	logMgr *logger.Manager
 
 	MaxIterations int
 }
 
 // NewReviewCycle creates a new review cycle workflow
-func NewReviewCycle(agents *agent.Agents, router *comms.Router, logMgr *logger.Manager) *ReviewCycle {
+func NewReviewCycle(agents *agent.Agents, logMgr *logger.Manager) *ReviewCycle {
 	return &ReviewCycle{
 		agents:        agents,
-		router:        router,
 		logMgr:        logMgr,
 		MaxIterations: 3, // Max review rounds before escalation
 	}
@@ -83,13 +80,6 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 			log.LogSimple(implPrompt, impl, time.Since(start))
 		}
 
-		// Send to comms
-		rc.router.Send("yuki", "priya", &comms.Message{
-			Subject: fmt.Sprintf("PR Review Request - Round %d", i),
-			Body:    impl,
-			Action:  "Please review",
-		})
-
 		// Priya reviews
 		fmt.Println("[Priya] Reviewing...")
 		reviewPrompt := fmt.Sprintf(`以下の実装をレビューしてください。
@@ -128,13 +118,6 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 			fmt.Println("[Priya] Approved!")
 			result.Approved = true
 			result.FinalOutput = impl
-
-			// Send approval to comms
-			rc.router.Send("priya", "yuki", &comms.Message{
-				Subject: "Review Approved",
-				Body:    review,
-				Action:  "None - Good job",
-			})
 			return result, nil
 		}
 
@@ -143,22 +126,9 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 			if tag == "SEC-CRITICAL" || tag == "DESIGN" || tag == "REQUIREMENTS" {
 				fmt.Printf("[Priya] Escalation required: %s\n", tag)
 				result.Escalated = true
-
-				rc.router.Send("priya", "mei", &comms.Message{
-					Subject: fmt.Sprintf("Escalation: %s", tag),
-					Body:    review,
-					Action:  "Please review and decide",
-				})
 				return result, nil
 			}
 		}
-
-		// Send feedback to Yuki
-		rc.router.Send("priya", "yuki", &comms.Message{
-			Subject: fmt.Sprintf("Review Feedback - Round %d", i),
-			Body:    review,
-			Action:  "Please fix the issues",
-		})
 
 		// Update task with feedback for next round
 		currentTask = fmt.Sprintf(`元のタスク: %s
@@ -172,11 +142,6 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 	// Max iterations reached
 	fmt.Println("[System] Max iterations reached, escalating...")
 	result.Escalated = true
-	rc.router.Send("priya", "mei", &comms.Message{
-		Subject: "Escalation: Max review iterations reached",
-		Body:    fmt.Sprintf("Task: %s\n\nReached %d review iterations without approval.", task, rc.MaxIterations),
-		Action:  "Please review the situation",
-	})
 
 	return result, nil
 }
