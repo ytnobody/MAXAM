@@ -544,6 +544,14 @@ func (m *tuiModel) detectAgents(text string) []string {
 		agents = append(agents, "mei")
 		seen["mei"] = true
 	}
+	if strings.Contains(lower, "@rin") || strings.Contains(lower, "りんちゃん") {
+		agents = append(agents, "rin")
+		seen["rin"] = true
+	}
+	if strings.Contains(lower, "@shiori") || strings.Contains(lower, "しおりちゃん") {
+		agents = append(agents, "shiori")
+		seen["shiori"] = true
+	}
 
 	// 明示的なメンションがなければキーワードで判定（1人だけ）
 	if len(agents) == 0 {
@@ -555,6 +563,12 @@ func (m *tuiModel) detectAgents(text string) []string {
 		}
 		if strings.Contains(lower, "アマラ") || strings.Contains(lower, "分析") || strings.Contains(lower, "傾向") {
 			return []string{"amara"}
+		}
+		if strings.Contains(lower, "りん") || strings.Contains(lower, "フロントエンド") || strings.Contains(lower, "ui") {
+			return []string{"rin"}
+		}
+		if strings.Contains(lower, "しおり") || strings.Contains(lower, "テスト") || strings.Contains(lower, "ドキュメント") {
+			return []string{"shiori"}
 		}
 		// デフォルトはMei
 		return []string{"mei"}
