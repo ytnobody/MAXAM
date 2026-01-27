@@ -15,8 +15,9 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
+		// No arguments: launch team chat TUI
+		runTeamChat()
+		return
 	}
 
 	cmd := os.Args[1]
@@ -47,9 +48,11 @@ func printUsage() {
 	fmt.Println(`MAXAM - AI Development Team CLI
 
 Usage:
+  maxam                Launch team chat (TUI)
   maxam <command> [arguments]
 
 Commands:
+  (none)               Launch team chat TUI (default)
   chat <agent>         Interactive chat with an agent (mei/yuki/priya/amara/team)
   task <description>   Submit a task to Yuki for implementation
   review <description> Run a full review cycle (Yuki → Priya)
@@ -65,10 +68,10 @@ Agents:
   amara  - Analysis
 
 Examples:
+  maxam                                           # Start team chat
   maxam task "Add a login button to the header"
   maxam review "Create unit tests for the auth module"
-  maxam ask yuki "How would you implement caching here?"
-  maxam ask priya "Review this code for security issues"`)
+  maxam ask yuki "How would you implement caching here?"`)
 }
 
 func getWorkDir() string {
