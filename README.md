@@ -169,4 +169,4 @@ Private
 
 ## 作者
 
-- Human Supervisor + MAXAM AI Team
+ytnobody
