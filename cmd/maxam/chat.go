@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -38,7 +37,7 @@ func runChat() {
 
 	session := &ChatSession{
 		agents:  agent.NewAgents(workDir),
-		logMgr:  logger.NewManager(filepath.Join(workDir, "logs"), workDir),
+		logMgr:  logger.NewManager(logger.GetDefaultLogDir(), workDir),
 		workDir: workDir,
 		history: make([]chatMessage, 0),
 	}

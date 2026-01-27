@@ -127,7 +127,7 @@ func initialTuiModel(workDir string) tuiModel {
 
 	return tuiModel{
 		agents:     agent.NewAgents(workDir),
-		logMgr:     logger.NewManager(filepath.Join(workDir, "logs"), workDir),
+		logMgr:     logger.NewManager(logger.GetDefaultLogDir(), workDir),
 		history:    hist,
 		workDir:    workDir,
 		textInput:  ti,
