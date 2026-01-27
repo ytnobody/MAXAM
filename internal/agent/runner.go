@@ -162,21 +162,13 @@ func NewAgents(workDir string) *Agents {
 	}
 
 	runners := make(map[string]*Runner)
-	agentNames := map[string]string{
-		"mei":    "Mei Chen",
-		"yuki":   "Yuki Tanaka",
-		"rin":    "Rin Sato",
-		"shiori": "Shiori Tanaka",
-		"priya":  "Priya Sharma",
-		"amara":  "Amara Okonkwo",
-	}
 
 	// Create runners for configured agents
 	for _, agentCfg := range cfg.Agents {
 		name := agentCfg.Name
-		fullName := agentNames[name]
+		fullName := agentCfg.FullName
 		if fullName == "" {
-			fullName = name // Use agent name if not in map
+			fullName = name // Use agent name if FullName not set
 		}
 
 		agentDir := filepath.Join(agentsDir, name)

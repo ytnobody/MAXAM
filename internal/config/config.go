@@ -17,8 +17,9 @@ type Config struct {
 
 // AgentConfig represents an agent configuration
 type AgentConfig struct {
-	Name string `yaml:"name"`
-	Role string `yaml:"role"`
+	Name     string `yaml:"name"`
+	FullName string `yaml:"full_name"`
+	Role     string `yaml:"role"`
 }
 
 // DefaultConfig returns the default configuration
@@ -26,12 +27,12 @@ func DefaultConfig() *Config {
 	return &Config{
 		Version: "1",
 		Agents: []AgentConfig{
-			{Name: "mei", Role: "PM / 要件定義"},
-			{Name: "yuki", Role: "バックエンド / インフラ"},
-			{Name: "rin", Role: "フロントエンド"},
-			{Name: "shiori", Role: "テスト / ドキュメント"},
-			{Name: "priya", Role: "レビュー / セキュリティ / QA"},
-			{Name: "amara", Role: "分析"},
+			{Name: "mei", FullName: "Mei Chen", Role: "PM / 要件定義"},
+			{Name: "yuki", FullName: "Yuki Tanaka", Role: "バックエンド / インフラ"},
+			{Name: "rin", FullName: "Rin Sato", Role: "フロントエンド"},
+			{Name: "shiori", FullName: "Shiori Tanaka", Role: "テスト / ドキュメント"},
+			{Name: "priya", FullName: "Priya Sharma", Role: "レビュー / セキュリティ / QA"},
+			{Name: "amara", FullName: "Amara Okonkwo", Role: "分析"},
 		},
 	}
 }
