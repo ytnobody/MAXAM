@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
-	"github.com/ytnobody/MAXAM/internal/comms"
 	"github.com/ytnobody/MAXAM/internal/logger"
 	"github.com/ytnobody/MAXAM/internal/workflow"
 )
@@ -24,12 +23,11 @@ func main() {
 
 	// Initialize components
 	agents := agent.NewAgents(workDir)
-	router := comms.NewRouter(filepath.Join(workDir, "comms"))
 	logMgr := logger.NewManager(filepath.Join(workDir, "logs"))
 	defer logMgr.Close()
 
 	// Create review cycle workflow
-	reviewCycle := workflow.NewReviewCycle(agents, router, logMgr)
+	reviewCycle := workflow.NewReviewCycle(agents, logMgr)
 
 	// Test task
 	task := `test/ ディレクトリに簡単なGoのユニットテストを作成してください。

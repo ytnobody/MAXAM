@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
-	"github.com/ytnobody/MAXAM/internal/comms"
 	"github.com/ytnobody/MAXAM/internal/logger"
 	"github.com/ytnobody/MAXAM/internal/workflow"
 )
@@ -127,11 +126,10 @@ func runReview() {
 	fmt.Printf("Task: %s\n", task)
 
 	agents := agent.NewAgents(workDir)
-	router := comms.NewRouter(filepath.Join(workDir, "comms"))
 	logMgr := logger.NewManager(filepath.Join(workDir, "logs"))
 	defer logMgr.Close()
 
-	reviewCycle := workflow.NewReviewCycle(agents, router, logMgr)
+	reviewCycle := workflow.NewReviewCycle(agents, logMgr)
 
 	ctx := context.Background()
 	result, err := reviewCycle.Run(ctx, task)
@@ -189,11 +187,10 @@ func runAnalyze() {
 	fmt.Println("=====================")
 
 	agents := agent.NewAgents(workDir)
-	router := comms.NewRouter(filepath.Join(workDir, "comms"))
 	logMgr := logger.NewManager(filepath.Join(workDir, "logs"))
 	defer logMgr.Close()
 
-	analysisCycle := workflow.NewAnalysisCycle(agents, router, logMgr, workDir)
+	analysisCycle := workflow.NewAnalysisCycle(agents, logMgr, workDir)
 
 	ctx := context.Background()
 	result, err := analysisCycle.Run(ctx)
@@ -237,23 +234,6 @@ func showStatus() {
 			status = "Missing CLAUDE.md"
 		}
 		fmt.Printf("  %-8s %-20s [%s]\n", name, agentRoles[name], status)
-	}
-
-	// Check comms
-	fmt.Println("\nCommunications:")
-	commsDir := filepath.Join(workDir, "comms")
-	if entries, err := os.ReadDir(commsDir); err == nil {
-		if len(entries) == 0 {
-			fmt.Println("  (no messages)")
-		}
-		for _, e := range entries {
-			if strings.HasSuffix(e.Name(), ".md") {
-				info, _ := e.Info()
-				fmt.Printf("  %s (%d bytes)\n", e.Name(), info.Size())
-			}
-		}
-	} else {
-		fmt.Println("  (comms directory not found)")
 	}
 
 	// Check logs

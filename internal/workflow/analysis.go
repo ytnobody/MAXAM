@@ -9,23 +9,20 @@ import (
 	"time"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
-	"github.com/ytnobody/MAXAM/internal/comms"
 	"github.com/ytnobody/MAXAM/internal/logger"
 )
 
 // AnalysisCycle represents Amara's weekly analysis workflow
 type AnalysisCycle struct {
 	agents  *agent.Agents
-	router  *comms.Router
 	logMgr  *logger.Manager
 	workDir string
 }
 
 // NewAnalysisCycle creates a new analysis cycle workflow
-func NewAnalysisCycle(agents *agent.Agents, router *comms.Router, logMgr *logger.Manager, workDir string) *AnalysisCycle {
+func NewAnalysisCycle(agents *agent.Agents, logMgr *logger.Manager, workDir string) *AnalysisCycle {
 	return &AnalysisCycle{
 		agents:  agents,
-		router:  router,
 		logMgr:  logMgr,
 		workDir: workDir,
 	}
@@ -74,16 +71,6 @@ func (ac *AnalysisCycle) Run(ctx context.Context) (*AnalysisResult, error) {
 
 	// Parse result
 	analysisResult := ac.parseAnalysisResult(result)
-
-	// Send recommendations to all agents
-	if len(analysisResult.Recommendations) > 0 {
-		recommendations := strings.Join(analysisResult.Recommendations, "\n- ")
-		ac.router.Send("amara", "all", &comms.Message{
-			Subject: "Weekly Analysis - Recommendations",
-			Body:    "Based on this week's analysis:\n\n- " + recommendations,
-			Action:  "Review and apply improvements",
-		})
-	}
 
 	fmt.Printf("[Amara] Analysis complete (%v)\n", elapsed.Round(time.Millisecond))
 	return analysisResult, nil

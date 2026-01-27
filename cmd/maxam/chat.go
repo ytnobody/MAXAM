@@ -10,17 +10,15 @@ import (
 	"time"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
-	"github.com/ytnobody/MAXAM/internal/comms"
 	"github.com/ytnobody/MAXAM/internal/logger"
 )
 
 // ChatSession manages an interactive conversation with an agent
 type ChatSession struct {
-	agents   *agent.Agents
-	router   *comms.Router
-	logMgr   *logger.Manager
-	workDir  string
-	history  []chatMessage
+	agents  *agent.Agents
+	logMgr  *logger.Manager
+	workDir string
+	history []chatMessage
 }
 
 type chatMessage struct {
@@ -40,7 +38,6 @@ func runChat() {
 
 	session := &ChatSession{
 		agents:  agent.NewAgents(workDir),
-		router:  comms.NewRouter(filepath.Join(workDir, "comms")),
 		logMgr:  logger.NewManager(filepath.Join(workDir, "logs")),
 		workDir: workDir,
 		history: make([]chatMessage, 0),
