@@ -55,6 +55,16 @@ var (
 			Foreground(lipgloss.Color("#9370DB")).
 			Bold(true)
 
+	// Rin: Bright Green (#00FF7F) - 元気でポジティブ
+	rinStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#00FF7F")).
+			Bold(true)
+
+	// Shiori: Soft Lavender (#E6E6FA) - 穏やかで几帳面
+	shioriStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#E6E6FA")).
+			Bold(true)
+
 	helpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241"))
 
@@ -767,6 +777,10 @@ func getTuiFullName(name string) string {
 		return "Priya"
 	case "amara":
 		return "Amara"
+	case "rin":
+		return "Rin"
+	case "shiori":
+		return "Shiori"
 	default:
 		return name
 	}
@@ -782,6 +796,10 @@ func getAgentStyle(name string) lipgloss.Style {
 		return priyaStyle
 	case "amara":
 		return amaraStyle
+	case "rin":
+		return rinStyle
+	case "shiori":
+		return shioriStyle
 	default:
 		return lipgloss.NewStyle()
 	}
