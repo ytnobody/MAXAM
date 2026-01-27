@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/logger"
@@ -23,7 +22,7 @@ func main() {
 
 	// Initialize components
 	agents := agent.NewAgents(workDir)
-	logMgr := logger.NewManager(filepath.Join(workDir, "logs"), workDir)
+	logMgr := logger.NewManager(logger.GetDefaultLogDir(), workDir)
 	defer logMgr.Close()
 
 	// Create review cycle workflow

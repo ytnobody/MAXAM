@@ -5,9 +5,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
+
+// GetDefaultLogDir returns the default log directory (~/.maxam/logs)
+func GetDefaultLogDir() string {
+	var home string
+	if runtime.GOOS == "windows" {
+		home = os.Getenv("USERPROFILE")
+	} else {
+		home = os.Getenv("HOME")
+	}
+	return filepath.Join(home, ".maxam", "logs")
+}
 
 // ProjectNameFromPath converts a directory path to a project name.
 // Example: /home/ubuntu/my-project -> home_ubuntu_my-project
@@ -116,13 +128,16 @@ type Manager struct {
 }
 
 // NewManager creates a new logger manager with project-specific subdirectory.
-// baseDir: logs directory (e.g., /path/to/MAXAM/logs)
+// baseDir: logs directory (e.g., ~/.maxam/logs)
 // projectDir: working directory for the project (used to generate project name)
 func NewManager(baseDir, projectDir string) *Manager {
 	projectName := ProjectNameFromPath(projectDir)
 	fullDir := filepath.Join(baseDir, projectName)
 
-	// Migrate existing logs if needed
+	// Migrate from project-local logs/ to ~/.maxam/logs/
+	migrateFromProjectLocal(projectDir, fullDir)
+
+	// Migrate existing logs if needed (old style in baseDir)
 	migrateExistingLogs(baseDir, projectName)
 
 	// Ensure directory exists
@@ -131,6 +146,89 @@ func NewManager(baseDir, projectDir string) *Manager {
 	return &Manager{
 		baseDir: fullDir,
 		loggers: make(map[string]*Logger),
+	}
+}
+
+// migrateFromProjectLocal moves logs from project/logs/ to ~/.maxam/logs/{project}/
+func migrateFromProjectLocal(projectDir, targetDir string) {
+	localLogsDir := filepath.Join(projectDir, "logs")
+
+	// Check if local logs directory exists
+	info, err := os.Stat(localLogsDir)
+	if err != nil || !info.IsDir() {
+		return
+	}
+
+	// Ensure target directory exists
+	os.MkdirAll(targetDir, 0755)
+
+	agents := []string{"mei", "yuki", "priya", "amara"}
+	projectName := ProjectNameFromPath(projectDir)
+
+	for _, agent := range agents {
+		// Check both direct agent dir and project-named subdir
+		paths := []string{
+			filepath.Join(localLogsDir, agent),
+			filepath.Join(localLogsDir, projectName, agent),
+		}
+
+		for _, oldPath := range paths {
+			info, err := os.Stat(oldPath)
+			if err != nil || !info.IsDir() {
+				continue
+			}
+
+			newPath := filepath.Join(targetDir, agent)
+			if _, err := os.Stat(newPath); os.IsNotExist(err) {
+				// Move directory
+				if err := os.Rename(oldPath, newPath); err != nil {
+					// If rename fails, try copying files
+					copyDir(oldPath, newPath)
+				}
+			} else {
+				// Merge: copy files that don't exist in target
+				mergeDir(oldPath, newPath)
+			}
+		}
+	}
+}
+
+// copyDir copies all files from src to dst
+func copyDir(src, dst string) {
+	os.MkdirAll(dst, 0755)
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+		if data, err := os.ReadFile(srcPath); err == nil {
+			os.WriteFile(dstPath, data, 0644)
+		}
+	}
+}
+
+// mergeDir copies files from src to dst that don't exist in dst
+func mergeDir(src, dst string) {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+		if _, err := os.Stat(dstPath); os.IsNotExist(err) {
+			if data, err := os.ReadFile(srcPath); err == nil {
+				os.WriteFile(dstPath, data, 0644)
+			}
+		}
 	}
 }
 

@@ -77,7 +77,8 @@ func (ac *AnalysisCycle) Run(ctx context.Context) (*AnalysisResult, error) {
 }
 
 func (ac *AnalysisCycle) collectLogs() (string, error) {
-	logsDir := filepath.Join(ac.workDir, "logs")
+	projectName := logger.ProjectNameFromPath(ac.workDir)
+	logsDir := filepath.Join(logger.GetDefaultLogDir(), projectName)
 	var content strings.Builder
 
 	agents := []string{"mei", "yuki", "priya", "amara"}

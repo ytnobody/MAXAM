@@ -126,7 +126,7 @@ func runReview() {
 	fmt.Printf("Task: %s\n", task)
 
 	agents := agent.NewAgents(workDir)
-	logMgr := logger.NewManager(filepath.Join(workDir, "logs"), workDir)
+	logMgr := logger.NewManager(logger.GetDefaultLogDir(), workDir)
 	defer logMgr.Close()
 
 	reviewCycle := workflow.NewReviewCycle(agents, logMgr)
@@ -187,7 +187,7 @@ func runAnalyze() {
 	fmt.Println("=====================")
 
 	agents := agent.NewAgents(workDir)
-	logMgr := logger.NewManager(filepath.Join(workDir, "logs"), workDir)
+	logMgr := logger.NewManager(logger.GetDefaultLogDir(), workDir)
 	defer logMgr.Close()
 
 	analysisCycle := workflow.NewAnalysisCycle(agents, logMgr, workDir)
@@ -238,11 +238,13 @@ func showStatus() {
 
 	// Check logs
 	fmt.Println("\nLogs:")
-	logsDir := filepath.Join(workDir, "logs")
+	projectName := logger.ProjectNameFromPath(workDir)
+	logsDir := filepath.Join(logger.GetDefaultLogDir(), projectName)
 	for _, name := range agentNames {
 		agentLogDir := filepath.Join(logsDir, name)
 		if entries, err := os.ReadDir(agentLogDir); err == nil {
 			fmt.Printf("  %s: %d log files\n", name, len(entries))
 		}
 	}
+	fmt.Printf("  (location: %s)\n", logsDir)
 }
