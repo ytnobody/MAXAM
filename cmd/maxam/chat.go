@@ -28,7 +28,7 @@ type chatMessage struct {
 func runChat() {
 	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "Usage: maxam chat <agent>")
-		fmt.Fprintln(os.Stderr, "Agents: mei, yuki, priya, amara, team")
+		fmt.Fprintln(os.Stderr, "Agents: mei, yuki, rin, shiori, priya, amara, team")
 		os.Exit(1)
 	}
 
@@ -113,7 +113,7 @@ func (s *ChatSession) runAgentChat(agentName string) {
 
 func (s *ChatSession) runTeamChat() {
 	fmt.Println("Chat with MAXAM Team")
-	fmt.Println("Mei will coordinate. Mention others: @yuki, @priya, @amara")
+	fmt.Println("Mei will coordinate. Mention others: @yuki, @rin, @shiori, @priya, @amara")
 	fmt.Println("Type 'exit' to quit")
 	fmt.Println(strings.Repeat("-", 50))
 
@@ -199,6 +199,12 @@ func detectMention(text string) string {
 	if strings.Contains(lower, "@yuki") || strings.Contains(lower, "ゆき") {
 		return "yuki"
 	}
+	if strings.Contains(lower, "@rin") || strings.Contains(lower, "りん") {
+		return "rin"
+	}
+	if strings.Contains(lower, "@shiori") || strings.Contains(lower, "しおり") {
+		return "shiori"
+	}
 	if strings.Contains(lower, "@priya") || strings.Contains(lower, "プリヤ") {
 		return "priya"
 	}
@@ -212,6 +218,10 @@ func getFullName(agentName string) string {
 	switch agentName {
 	case "yuki":
 		return "Yuki"
+	case "rin":
+		return "Rin"
+	case "shiori":
+		return "Shiori"
 	case "priya":
 		return "Priya"
 	case "amara":

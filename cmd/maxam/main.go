@@ -52,7 +52,7 @@ Usage:
 
 Commands:
   (none)               Launch team chat TUI (default)
-  chat <agent>         Interactive chat with an agent (mei/yuki/priya/amara/team)
+  chat <agent>         Interactive chat with an agent (mei/yuki/rin/shiori/priya/amara/team)
   task <description>   Submit a task to Yuki for implementation
   review <description> Run a full review cycle (Yuki → Priya)
   ask <agent> <prompt> Ask a specific agent a question
@@ -62,7 +62,9 @@ Commands:
 
 Agents:
   mei    - PM, requirements
-  yuki   - Implementation, infrastructure
+  yuki   - Backend, infrastructure
+  rin    - Frontend
+  shiori - Test, documentation
   priya  - Review, security, QA
   amara  - Analysis
 
@@ -152,7 +154,7 @@ func runReview() {
 func runAsk() {
 	if len(os.Args) < 4 {
 		fmt.Fprintln(os.Stderr, "Usage: maxam ask <agent> <prompt>")
-		fmt.Fprintln(os.Stderr, "Agents: mei, yuki, priya, amara")
+		fmt.Fprintln(os.Stderr, "Agents: mei, yuki, rin, shiori, priya, amara")
 		os.Exit(1)
 	}
 
@@ -164,7 +166,7 @@ func runAsk() {
 	runner, ok := agents.Get(agentName)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "Unknown agent: %s\n", agentName)
-		fmt.Fprintln(os.Stderr, "Available: mei, yuki, priya, amara")
+		fmt.Fprintln(os.Stderr, "Available: mei, yuki, rin, shiori, priya, amara")
 		os.Exit(1)
 	}
 
@@ -219,12 +221,14 @@ func showStatus() {
 
 	// Check CLAUDE.md files
 	fmt.Println("Agents:")
-	agentNames := []string{"mei", "yuki", "priya", "amara"}
+	agentNames := []string{"mei", "yuki", "rin", "shiori", "priya", "amara"}
 	agentRoles := map[string]string{
-		"mei":   "PM / Requirements",
-		"yuki":  "Implementation",
-		"priya": "Review / QA",
-		"amara": "Analysis",
+		"mei":    "PM / Requirements",
+		"yuki":   "Backend / Infrastructure",
+		"rin":    "Frontend",
+		"shiori": "Test / Documentation",
+		"priya":  "Review / QA",
+		"amara":  "Analysis",
 	}
 
 	for _, name := range agentNames {

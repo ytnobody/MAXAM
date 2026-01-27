@@ -147,10 +147,12 @@ func NewAgents(workDir string) *Agents {
 	return &Agents{
 		workDir: workDir,
 		runners: map[string]*Runner{
-			"yuki":  NewRunner("Yuki Tanaka", workDir, filepath.Join(agentsDir, "yuki")),
-			"priya": NewRunner("Priya Sharma", workDir, filepath.Join(agentsDir, "priya")),
-			"mei":   NewRunner("Mei Chen", workDir, filepath.Join(agentsDir, "mei")),
-			"amara": NewRunner("Amara Okonkwo", workDir, filepath.Join(agentsDir, "amara")),
+			"yuki":   NewRunner("Yuki Tanaka", workDir, filepath.Join(agentsDir, "yuki")),
+			"priya":  NewRunner("Priya Sharma", workDir, filepath.Join(agentsDir, "priya")),
+			"mei":    NewRunner("Mei Chen", workDir, filepath.Join(agentsDir, "mei")),
+			"amara":  NewRunner("Amara Okonkwo", workDir, filepath.Join(agentsDir, "amara")),
+			"rin":    NewRunner("Rin Sato", workDir, filepath.Join(agentsDir, "rin")),
+			"shiori": NewRunner("Shiori Tanaka", workDir, filepath.Join(agentsDir, "shiori")),
 		},
 	}
 }
@@ -179,4 +181,14 @@ func (a *Agents) Mei() *Runner {
 // Amara returns the analysis agent
 func (a *Agents) Amara() *Runner {
 	return a.runners["amara"]
+}
+
+// Rin returns the frontend agent
+func (a *Agents) Rin() *Runner {
+	return a.runners["rin"]
+}
+
+// Shiori returns the test/docs agent
+func (a *Agents) Shiori() *Runner {
+	return a.runners["shiori"]
 }
