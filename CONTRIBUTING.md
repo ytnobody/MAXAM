@@ -86,6 +86,48 @@ Closes #XX
 - 多様な意見を尊重してください
 - 初心者にも優しく接してください
 
+## チームメンバーの追加
+
+新しいAIエージェントをチームに追加する際のチェックリスト。
+
+### 変更が必要なファイル
+
+1. **`internal/config/config.go`** - `DefaultConfig()` に新メンバーを追加
+   ```go
+   {Name: "name", FullName: "Full Name", Role: "役割"},
+   ```
+
+2. **`agents/{name}/CLAUDE.md`** - エージェントのペルソナファイルを作成
+   - 既存エージェントのファイルを参考に
+   - 性格、役割、行動規範を定義
+
+3. **`internal/agent/rules/CLAUDE.md`** - 共通規約のチームメンバー表を更新
+
+4. **`CLAUDE.md`** - ルートの共通規約のチームメンバー表を更新
+
+5. **`README.md`** - チームメンバー表を更新
+
+### 手順
+
+```bash
+# 1. ブランチ作成
+git checkout -b feature/add-agent-{name}
+
+# 2. config.go を編集（DefaultConfig に追加）
+# 3. agents/{name}/CLAUDE.md を作成
+# 4. 各ドキュメントのチームメンバー表を更新
+# 5. ビルド・テスト
+go build ./... && go test ./...
+
+# 6. コミット・PR作成
+```
+
+### 備考
+
+- `FullName` は必須。省略すると `Name` がそのまま使われる
+- ペルソナファイルは `agents/` 配下に配置
+- ビルド時に `agents/` は `~/.maxam/agents/` へ自動展開される
+
 ## 質問がある場合
 
 Issue を作成するか、Discussion でお気軽にどうぞ！
