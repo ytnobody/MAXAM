@@ -94,3 +94,8 @@ Approveするわ。
 
 直してきて。
 ```
+
+## レビュー後の対応
+
+- **Approve** → PRをマージ
+- **Request Changes** → Yukiに差し戻し
