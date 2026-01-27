@@ -707,6 +707,35 @@ func (m *tuiModel) analyzeProject() {
 	}
 	sb.WriteString("```\n")
 
+	// サブプロジェクト（ネストしたgitリポジトリ）を検出
+	subProjects := findGitRepos(m.workDir)
+	if len(subProjects) > 0 {
+		sb.WriteString("\n### 検出されたサブプロジェクト\n\n")
+		for _, proj := range subProjects {
+			// プロジェクトタイプを表示
+			var types []string
+			if proj.hasGoMod {
+				types = append(types, "Go")
+			}
+			if proj.hasPackageJSON {
+				types = append(types, "Node.js")
+			}
+			typeStr := ""
+			if len(types) > 0 {
+				typeStr = fmt.Sprintf(" (%s)", strings.Join(types, ", "))
+			}
+
+			sb.WriteString(fmt.Sprintf("#### %s%s\n", proj.path, typeStr))
+			sb.WriteString(fmt.Sprintf("- パス: `%s`\n", proj.absPath))
+			sb.WriteString(fmt.Sprintf("- worktree例: `%s`\n", getWorktreePath("yuki", m.workDir, proj.path)))
+
+			if proj.readme != "" {
+				sb.WriteString(fmt.Sprintf("- README概要:\n```\n%s\n```\n", proj.readme))
+			}
+			sb.WriteString("\n")
+		}
+	}
+
 	m.projectContext = sb.String()
 }
 
@@ -855,6 +884,99 @@ func isNoIssueResponse(response string) bool {
 		}
 	}
 	return false
+}
+
+// subProject はサブプロジェクトの情報を保持
+type subProject struct {
+	path     string // 相対パス
+	absPath  string // 絶対パス
+	readme   string // README.mdの内容（あれば）
+	hasGoMod bool
+	hasPackageJSON bool
+}
+
+// findGitRepos は指定ディレクトリ配下のgitリポジトリを再帰的に検出
+func findGitRepos(rootDir string) []subProject {
+	var projects []subProject
+
+	var walk func(dir string, depth int)
+	walk = func(dir string, depth int) {
+		// 深すぎる場合は探索しない（安全策）
+		if depth > 10 {
+			return
+		}
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+
+			name := entry.Name()
+			// 隠しディレクトリ、node_modules、vendorはスキップ
+			if strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" {
+				continue
+			}
+
+			subDir := filepath.Join(dir, name)
+			gitPath := filepath.Join(subDir, ".git")
+
+			// .gitがあればサブプロジェクトとして登録
+			if info, err := os.Stat(gitPath); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
+				relPath, _ := filepath.Rel(rootDir, subDir)
+				proj := subProject{
+					path:    relPath,
+					absPath: subDir,
+				}
+
+				// README.mdを読む
+				readmePath := filepath.Join(subDir, "README.md")
+				if content, err := os.ReadFile(readmePath); err == nil {
+					readme := string(content)
+					if len(readme) > 500 {
+						readme = readme[:500] + "..."
+					}
+					proj.readme = readme
+				}
+
+				// プロジェクトタイプを検出
+				if _, err := os.Stat(filepath.Join(subDir, "go.mod")); err == nil {
+					proj.hasGoMod = true
+				}
+				if _, err := os.Stat(filepath.Join(subDir, "package.json")); err == nil {
+					proj.hasPackageJSON = true
+				}
+
+				projects = append(projects, proj)
+				// このディレクトリ配下はこれ以上探索しない（gitリポジトリ内のサブモジュールは除外）
+				continue
+			}
+
+			// .gitがなければさらに深く探索
+			walk(subDir, depth+1)
+		}
+	}
+
+	walk(rootDir, 0)
+	return projects
+}
+
+// getWorktreePath はサブプロジェクトのworktreeパスを生成
+// 親ディレクトリからの相対パスを_で連結
+func getWorktreePath(agentName, rootDir, subProjectPath string) string {
+	// rootDirの最後のディレクトリ名を取得
+	rootName := filepath.Base(rootDir)
+
+	// サブプロジェクトのパスを_で連結
+	pathParts := strings.Split(subProjectPath, string(filepath.Separator))
+	allParts := append([]string{rootName}, pathParts...)
+	projectName := strings.Join(allParts, "_")
+
+	return filepath.Join("/tmp/maxam", agentName, projectName)
 }
 
 func runTeamChat() {
