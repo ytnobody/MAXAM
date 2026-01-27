@@ -76,17 +76,16 @@ type tuiModel struct {
 	workDir        string
 	projectContext string
 
-	viewport    viewport.Model
-	textInput   textinput.Model
-	messages    []tuiMessage
-	inputHist   []string
-	histIdx     int
-	tempInput   string
-	ready       bool
-	processing  bool
-	inputQueue  []string // 処理中の入力キュー
-	width       int
-	height      int
+	viewport          viewport.Model
+	textInput         textinput.Model
+	messages          []tuiMessage
+	inputHist         []string
+	histIdx           int
+	tempInput         string
+	ready             bool
+	processingAgents  map[string]bool // 各エージェントの処理状態
+	width             int
+	height            int
 }
 
 type agentResponseMsg struct {
@@ -126,15 +125,15 @@ func initialTuiModel(workDir string) tuiModel {
 	}
 
 	return tuiModel{
-		agents:     agent.NewAgents(workDir),
-		logMgr:     logger.NewManager(logger.GetDefaultLogDir(), workDir),
-		history:    hist,
-		workDir:    workDir,
-		textInput:  ti,
-		messages:   messages,
-		inputHist:  make([]string, 0),
-		inputQueue: make([]string, 0),
-		histIdx:    -1,
+		agents:           agent.NewAgents(workDir),
+		logMgr:           logger.NewManager(logger.GetDefaultLogDir(), workDir),
+		history:          hist,
+		workDir:          workDir,
+		textInput:        ti,
+		messages:         messages,
+		inputHist:        make([]string, 0),
+		processingAgents: make(map[string]bool),
+		histIdx:          -1,
 	}
 }
 
@@ -165,7 +164,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if input == "clear" {
 				m.messages = make([]tuiMessage, 0)
-				m.inputQueue = make([]string, 0)
+				m.processingAgents = make(map[string]bool)
 				if m.history != nil {
 					m.history.Clear()
 				}
@@ -180,27 +179,29 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tempInput = ""
 			m.textInput.SetValue("")
 
-			// 処理中ならキューに積む
-			if m.processing {
-				m.inputQueue = append(m.inputQueue, input)
-				m.messages = append(m.messages, tuiMessage{role: "user", content: input})
-				if m.history != nil {
-					m.history.Add("user", input)
-				}
-				m.updateViewport()
-				return m, nil
-			}
-
 			// Add user message
 			m.messages = append(m.messages, tuiMessage{role: "user", content: input})
 			if m.history != nil {
 				m.history.Add("user", input)
 			}
-			m.processing = true
 			m.updateViewport()
 
-			// Start agent processing
-			return m, m.runAgent(input)
+			// 複数メンション対応: 検出されたエージェント全員に並列でリクエスト
+			targetAgents := m.detectAgents(input)
+			var cmds []tea.Cmd
+			for _, agentName := range targetAgents {
+				// そのエージェントが処理中でなければ開始
+				if !m.processingAgents[agentName] {
+					m.processingAgents[agentName] = true
+					cmds = append(cmds, m.runAgentAsync(input, agentName, 0))
+				}
+			}
+
+			if len(cmds) > 0 {
+				m.updateViewport()
+				return m, tea.Batch(cmds...)
+			}
+			return m, nil
 
 		case tea.KeyUp:
 			if msg.Alt || tea.KeyMsg(msg).String() == "shift+up" {
@@ -280,12 +281,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateViewport()
 
 	case agentResponseMsg:
+		// エージェントの処理状態をクリア
+		delete(m.processingAgents, msg.agent)
+
 		if msg.err != nil {
 			m.messages = append(m.messages, tuiMessage{
 				role:    msg.agent,
 				content: fmt.Sprintf("(エラー: %v)", msg.err),
 			})
-			m.processing = false
 			m.updateViewport()
 			return m, nil
 		}
@@ -310,20 +313,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.updateViewport()
 
-		// 次のエージェントがいれば連鎖
-		if msg.nextAgent != "" {
-			// 今の発言を次のエージェントへの入力として使う
-			return m, m.runAgentChain(msg.content, msg.nextAgent, msg.chainDepth+1)
+		// 次のエージェントがいれば連鎖（並列対応）
+		if msg.nextAgent != "" && !m.processingAgents[msg.nextAgent] {
+			m.processingAgents[msg.nextAgent] = true
+			return m, m.runAgentAsync(msg.content, msg.nextAgent, msg.chainDepth+1)
 		}
 
-		// キューに入力があれば次を処理
-		if len(m.inputQueue) > 0 {
-			nextInput := m.inputQueue[0]
-			m.inputQueue = m.inputQueue[1:]
-			return m, m.runAgent(nextInput)
-		}
-
-		m.processing = false
 		return m, nil
 	}
 
@@ -340,25 +335,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *tuiModel) runAgent(input string) tea.Cmd {
-	return m.runAgentChain(input, "", 0)
-}
-
-func (m *tuiModel) runAgentChain(input string, forceAgent string, depth int) tea.Cmd {
+func (m *tuiModel) runAgentAsync(input string, targetAgent string, depth int) tea.Cmd {
 	return func() tea.Msg {
-		var agentName string
+		agentName := targetAgent
 		var prompt string
 
 		// 一定間隔でMeiが介入してまとめる
-		if depth > 0 && depth%meiInterventionInterval == 0 && forceAgent != "mei" {
+		if depth > 0 && depth%meiInterventionInterval == 0 && targetAgent != "mei" {
 			agentName = "mei"
 			prompt = m.buildMeiInterventionPrompt()
 		} else {
-			if forceAgent != "" {
-				agentName = forceAgent
-			} else {
-				agentName = m.detectAgent(input)
-			}
 			prompt = m.buildPrompt(agentName, input)
 		}
 
@@ -465,8 +451,13 @@ func (m *tuiModel) updateViewport() {
 		sb.WriteString("\n\n")
 	}
 
-	if m.processing {
-		sb.WriteString(helpStyle.Render("考え中..."))
+	// 処理中のエージェントを表示
+	if len(m.processingAgents) > 0 {
+		var names []string
+		for name := range m.processingAgents {
+			names = append(names, getTuiFullName(name))
+		}
+		sb.WriteString(helpStyle.Render(fmt.Sprintf("%s が考え中...", strings.Join(names, ", "))))
 	}
 
 	m.viewport.SetContent(sb.String())
@@ -484,8 +475,12 @@ func (m tuiModel) View() string {
 
 	// Footer with input
 	var status string
-	if m.processing {
-		status = statusStyle.Render(" 処理中... ")
+	if len(m.processingAgents) > 0 {
+		var names []string
+		for name := range m.processingAgents {
+			names = append(names, getTuiFullName(name))
+		}
+		status = statusStyle.Render(fmt.Sprintf(" %s 処理中... ", strings.Join(names, ", ")))
 	} else {
 		status = statusStyle.Render(fmt.Sprintf(" 履歴:%d ↑↓:履歴 PgUp/Dn:スクロール ", len(m.inputHist)))
 	}
@@ -502,22 +497,54 @@ func (m tuiModel) View() string {
 	)
 }
 
-func (m *tuiModel) detectAgent(text string) string {
+// detectAgents は入力から対象エージェントを複数検出（並列呼び出し用）
+func (m *tuiModel) detectAgents(text string) []string {
 	lower := strings.ToLower(text)
+	var agents []string
+	seen := make(map[string]bool)
 
-	if strings.Contains(lower, "@yuki") || strings.Contains(lower, "ゆき") ||
-		strings.Contains(lower, "実装") || strings.Contains(lower, "コード書") {
-		return "yuki"
+	// 明示的なメンションを優先的にチェック
+	if strings.Contains(lower, "@yuki") || strings.Contains(lower, "ゆきちゃん") {
+		agents = append(agents, "yuki")
+		seen["yuki"] = true
 	}
-	if strings.Contains(lower, "@priya") || strings.Contains(lower, "プリヤ") ||
-		strings.Contains(lower, "レビュー") || strings.Contains(lower, "チェック") {
-		return "priya"
+	if strings.Contains(lower, "@priya") || strings.Contains(lower, "プリヤちゃん") {
+		agents = append(agents, "priya")
+		seen["priya"] = true
 	}
-	if strings.Contains(lower, "@amara") || strings.Contains(lower, "アマラ") ||
-		strings.Contains(lower, "分析") || strings.Contains(lower, "傾向") {
-		return "amara"
+	if strings.Contains(lower, "@amara") || strings.Contains(lower, "アマラちゃん") {
+		agents = append(agents, "amara")
+		seen["amara"] = true
+	}
+	if strings.Contains(lower, "@mei") || strings.Contains(lower, "メイちゃん") {
+		agents = append(agents, "mei")
+		seen["mei"] = true
 	}
 
+	// 明示的なメンションがなければキーワードで判定（1人だけ）
+	if len(agents) == 0 {
+		if strings.Contains(lower, "ゆき") || strings.Contains(lower, "実装") || strings.Contains(lower, "コード書") {
+			return []string{"yuki"}
+		}
+		if strings.Contains(lower, "プリヤ") || strings.Contains(lower, "レビュー") || strings.Contains(lower, "チェック") {
+			return []string{"priya"}
+		}
+		if strings.Contains(lower, "アマラ") || strings.Contains(lower, "分析") || strings.Contains(lower, "傾向") {
+			return []string{"amara"}
+		}
+		// デフォルトはMei
+		return []string{"mei"}
+	}
+
+	return agents
+}
+
+// detectAgent は互換性のため残す（単一検出）
+func (m *tuiModel) detectAgent(text string) string {
+	agents := m.detectAgents(text)
+	if len(agents) > 0 {
+		return agents[0]
+	}
 	return "mei"
 }
 
