@@ -147,6 +147,79 @@ func TestFindGitRepos(t *testing.T) {
 	}
 }
 
+func TestDetectAgentMentions(t *testing.T) {
+	tests := []struct {
+		name         string
+		text         string
+		currentAgent string
+		want         []string
+	}{
+		{
+			name:         "単一メンション @yuki",
+			text:         "@Yuki これやっといて",
+			currentAgent: "mei",
+			want:         []string{"yuki"},
+		},
+		{
+			name:         "複数メンション @yuki @priya",
+			text:         "@Yuki 実装して、@Priya レビューお願い",
+			currentAgent: "mei",
+			want:         []string{"yuki", "priya"},
+		},
+		{
+			name:         "全員メンション",
+			text:         "@Yuki @Priya @Amara @Rin @Shiori みんな集まって",
+			currentAgent: "mei",
+			want:         []string{"yuki", "priya", "amara", "rin", "shiori"},
+		},
+		{
+			name:         "自分へのメンションは無視",
+			text:         "@Mei 確認して",
+			currentAgent: "mei",
+			want:         []string{},
+		},
+		{
+			name:         "メンションなし",
+			text:         "これで完了です",
+			currentAgent: "yuki",
+			want:         []string{},
+		},
+		{
+			name:         "日本語パターン ゆきさん",
+			text:         "ゆきさんにお願いしますね",
+			currentAgent: "mei",
+			want:         []string{"yuki"},
+		},
+		{
+			name:         "重複メンションは1回だけ",
+			text:         "@Yuki やって、yukiさんよろしく",
+			currentAgent: "mei",
+			want:         []string{"yuki"},
+		},
+		{
+			name:         "新人エージェント rin shiori",
+			text:         "@Rin フロント、@Shiori テストよろしく",
+			currentAgent: "mei",
+			want:         []string{"rin", "shiori"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := detectAgentMentions(tt.text, tt.currentAgent)
+			if len(got) != len(tt.want) {
+				t.Errorf("detectAgentMentions(%q, %q) = %v, want %v", tt.text, tt.currentAgent, got, tt.want)
+				return
+			}
+			for i, v := range got {
+				if v != tt.want[i] {
+					t.Errorf("detectAgentMentions(%q, %q)[%d] = %q, want %q", tt.text, tt.currentAgent, i, v, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestGetWorktreePath(t *testing.T) {
 	tests := []struct {
 		name           string
