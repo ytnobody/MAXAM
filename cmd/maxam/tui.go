@@ -84,6 +84,7 @@ type tuiModel struct {
 	tempInput   string
 	ready       bool
 	processing  bool
+	inputQueue  []string // 処理中の入力キュー
 	width       int
 	height      int
 }
@@ -125,14 +126,15 @@ func initialTuiModel(workDir string) tuiModel {
 	}
 
 	return tuiModel{
-		agents:    agent.NewAgents(workDir),
-		logMgr:    logger.NewManager(filepath.Join(workDir, "logs")),
-		history:   hist,
-		workDir:   workDir,
-		textInput: ti,
-		messages:  messages,
-		inputHist: make([]string, 0),
-		histIdx:   -1,
+		agents:     agent.NewAgents(workDir),
+		logMgr:     logger.NewManager(filepath.Join(workDir, "logs")),
+		history:    hist,
+		workDir:    workDir,
+		textInput:  ti,
+		messages:   messages,
+		inputHist:  make([]string, 0),
+		inputQueue: make([]string, 0),
+		histIdx:    -1,
 	}
 }
 
@@ -145,10 +147,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if m.processing {
-			return m, nil
-		}
-
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			m.logMgr.Close()
@@ -167,6 +165,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if input == "clear" {
 				m.messages = make([]tuiMessage, 0)
+				m.inputQueue = make([]string, 0)
 				if m.history != nil {
 					m.history.Clear()
 				}
@@ -175,17 +174,28 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Save to history
+			// Save to input history
 			m.inputHist = append(m.inputHist, input)
 			m.histIdx = len(m.inputHist)
 			m.tempInput = ""
+			m.textInput.SetValue("")
+
+			// 処理中ならキューに積む
+			if m.processing {
+				m.inputQueue = append(m.inputQueue, input)
+				m.messages = append(m.messages, tuiMessage{role: "user", content: input})
+				if m.history != nil {
+					m.history.Add("user", input)
+				}
+				m.updateViewport()
+				return m, nil
+			}
 
 			// Add user message
 			m.messages = append(m.messages, tuiMessage{role: "user", content: input})
 			if m.history != nil {
 				m.history.Add("user", input)
 			}
-			m.textInput.SetValue("")
 			m.processing = true
 			m.updateViewport()
 
@@ -304,6 +314,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.nextAgent != "" {
 			// 今の発言を次のエージェントへの入力として使う
 			return m, m.runAgentChain(msg.content, msg.nextAgent, msg.chainDepth+1)
+		}
+
+		// キューに入力があれば次を処理
+		if len(m.inputQueue) > 0 {
+			nextInput := m.inputQueue[0]
+			m.inputQueue = m.inputQueue[1:]
+			return m, m.runAgent(nextInput)
 		}
 
 		m.processing = false
