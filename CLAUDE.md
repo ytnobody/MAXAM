@@ -9,7 +9,9 @@ MAXAMは複数のAIエージェントが協調して開発業務を遂行する�
 | 名前 | 役割 |
 |------|------|
 | Mei Chen | 要件定義 + PM |
-| Yuki Tanaka | 実装 + インフラ |
+| Yuki Tanaka | バックエンド + インフラ |
+| Rin Sato | フロントエンド |
+| Shiori Tanaka | テスト + ドキュメント |
 | Priya Sharma | レビュー + セキュリティ + QA |
 | Amara Okonkwo | 分析 |
 
@@ -89,6 +91,49 @@ type: feat, fix, refactor, docs, test, chore
 
 下流で無理に解決しない。問題は上流に伝播させる。
 
+## Worktree運用
+
+並列作業のため、各エージェントは専用のworktreeで作業する。
+
+### ディレクトリ構成
+
+```
+/tmp/maxam/{agent-name}/{project-name}/
+```
+
+| パス | 用途 |
+|------|------|
+| `/home/ubuntu/{project}/` | 元リポジトリ（main）、Meiの作業場所 |
+| `/tmp/maxam/yuki/{project}/` | Yuki用worktree |
+| `/tmp/maxam/rin/{project}/` | Rin用worktree |
+| `/tmp/maxam/shiori/{project}/` | Shiori用worktree |
+| `/tmp/maxam/priya/{project}/` | Priya用worktree |
+| `/tmp/maxam/amara/{project}/` | Amara用worktree |
+
+**例：複数プロジェクトを担当する場合**
+```
+/tmp/maxam/yuki/MAXAM/      # YukiのMAXAM作業
+/tmp/maxam/yuki/HOGEHOGE/   # YukiのHOGEHOGE作業
+/tmp/maxam/priya/MAXAM/     # PriyaのMAXAM作業
+/tmp/maxam/priya/HOGEHOGE/  # PriyaのHOGEHOGE作業
+```
+
+### 運用ルール
+
+1. **作業開始時**: worktreeが存在しなければ作成
+   ```bash
+   git worktree add /tmp/maxam/{name}/{project} {branch}
+   ```
+2. **ブランチ管理**: worktree内で自由に切り替えOK
+3. **マシン再起動時**: `/tmp`は消えるので再作成
+
+### 備考
+
+- Meiは元リポジトリで要件定義・ドキュメント作業
+- 他メンバーは自分のworktreeで独立して作業可能
+- 衝突を気にせず並列作業できる
+- `/tmp/maxam/` 配下はMAXAMチーム共通の作業場所として、複数プロジェクトを管理
+
 ## 学習事項
 
 ### 2026-01-27 分析結果 (by Amara)
@@ -96,6 +141,24 @@ type: feat, fix, refactor, docs, test, chore
 #### 環境整備
 - レビュー担当（Priya）の環境にも開発言語のランタイムをインストールし、独立した動作確認を可能にする
 - 実装者の報告のみに依存せず、独立検証できる体制を整える
+
+**Goインストール手順（Ubuntu 24.04）:**
+```bash
+# 方法1: aptでインストール（シンプル）
+sudo apt update && sudo apt install -y golang-go
+go version
+
+# 方法2: 最新版が必要な場合
+wget https://go.dev/dl/go1.23.5.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.23.5.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+go version
+
+# 動作確認
+cd /tmp/maxam/priya/MAXAM
+go test ./...
+```
 
 #### 報告フォーマット
 実装完了報告には以下を含める:
