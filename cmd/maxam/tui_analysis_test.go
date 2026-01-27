@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -62,6 +64,126 @@ func TestIsNoIssueResponse(t *testing.T) {
 			got := isNoIssueResponse(tt.response)
 			if got != tt.want {
 				t.Errorf("isNoIssueResponse(%q) = %v, want %v", tt.response, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFindGitRepos(t *testing.T) {
+	// テスト用の一時ディレクトリを作成
+	tmpDir, err := os.MkdirTemp("", "maxam-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// サブプロジェクト構造を作成
+	// tmpDir/
+	//   ├── project1/
+	//   │   └── .git/
+	//   ├── project2/
+	//   │   ├── .git/
+	//   │   └── README.md
+	//   ├── nested/
+	//   │   └── deep/
+	//   │       └── .git/
+	//   └── not-a-repo/
+
+	// project1 (.git ディレクトリ)
+	project1 := filepath.Join(tmpDir, "project1")
+	os.MkdirAll(filepath.Join(project1, ".git"), 0755)
+
+	// project2 (.git ディレクトリ + README)
+	project2 := filepath.Join(tmpDir, "project2")
+	os.MkdirAll(filepath.Join(project2, ".git"), 0755)
+	os.WriteFile(filepath.Join(project2, "README.md"), []byte("# Project 2\nTest project"), 0644)
+	os.WriteFile(filepath.Join(project2, "go.mod"), []byte("module example.com/project2"), 0644)
+
+	// nested/deep (深いネスト)
+	nested := filepath.Join(tmpDir, "nested", "deep")
+	os.MkdirAll(filepath.Join(nested, ".git"), 0755)
+
+	// not-a-repo (gitリポジトリではない)
+	notRepo := filepath.Join(tmpDir, "not-a-repo")
+	os.MkdirAll(notRepo, 0755)
+
+	// テスト実行
+	repos := findGitRepos(tmpDir)
+
+	if len(repos) != 3 {
+		t.Errorf("expected 3 repos, got %d", len(repos))
+		for _, r := range repos {
+			t.Logf("  found: %s", r.path)
+		}
+	}
+
+	// 各リポジトリの検証
+	pathMap := make(map[string]subProject)
+	for _, r := range repos {
+		pathMap[r.path] = r
+	}
+
+	// project1
+	if _, ok := pathMap["project1"]; !ok {
+		t.Error("project1 not found")
+	}
+
+	// project2 (README and go.mod)
+	if p2, ok := pathMap["project2"]; ok {
+		if p2.readme == "" {
+			t.Error("project2 should have readme")
+		}
+		if !p2.hasGoMod {
+			t.Error("project2 should have go.mod")
+		}
+	} else {
+		t.Error("project2 not found")
+	}
+
+	// nested/deep
+	nestedPath := filepath.Join("nested", "deep")
+	if _, ok := pathMap[nestedPath]; !ok {
+		t.Errorf("nested/deep not found, expected path: %s", nestedPath)
+	}
+}
+
+func TestGetWorktreePath(t *testing.T) {
+	tests := []struct {
+		name           string
+		agentName      string
+		rootDir        string
+		subProjectPath string
+		want           string
+	}{
+		{
+			name:           "単純なサブプロジェクト",
+			agentName:      "yuki",
+			rootDir:        "/home/ubuntu/calcium-lang",
+			subProjectPath: "calcium",
+			want:           "/tmp/maxam/yuki/calcium-lang_calcium",
+		},
+		{
+			name:           "深いネスト",
+			agentName:      "yuki",
+			rootDir:        "/home/ubuntu/parent",
+			subProjectPath: filepath.Join("child", "grandchild"),
+			want:           "/tmp/maxam/yuki/parent_child_grandchild",
+		},
+		{
+			name:           "別のエージェント",
+			agentName:      "priya",
+			rootDir:        "/home/ubuntu/calcium-lang",
+			subProjectPath: "boneyard",
+			want:           "/tmp/maxam/priya/calcium-lang_boneyard",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getWorktreePath(tt.agentName, tt.rootDir, tt.subProjectPath)
+			if got != tt.want {
+				t.Errorf("getWorktreePath(%q, %q, %q) = %q, want %q",
+					tt.agentName, tt.rootDir, tt.subProjectPath, got, tt.want)
 			}
 		})
 	}

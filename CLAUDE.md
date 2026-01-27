@@ -98,34 +98,60 @@ type: feat, fix, refactor, docs, test, chore
 ### ディレクトリ構成
 
 ```
-/tmp/maxam/{agent-name}/{project-name}/
+/tmp/maxam/{agent-name}/{parent}_{child}/
 ```
+
+親ディレクトリからの相対パスを `_` で連結してフラットに管理する。
 
 | パス | 用途 |
 |------|------|
 | `/home/ubuntu/{project}/` | 元リポジトリ（main）、Meiの作業場所 |
-| `/tmp/maxam/yuki/{project}/` | Yuki用worktree |
+| `/tmp/maxam/yuki/{project}/` | Yuki用worktree（単独リポジトリ） |
+| `/tmp/maxam/yuki/{parent}_{child}/` | Yuki用worktree（ネストしたリポジトリ） |
 | `/tmp/maxam/rin/{project}/` | Rin用worktree |
 | `/tmp/maxam/shiori/{project}/` | Shiori用worktree |
 | `/tmp/maxam/priya/{project}/` | Priya用worktree |
 | `/tmp/maxam/amara/{project}/` | Amara用worktree |
 
-**例：複数プロジェクトを担当する場合**
+**例：単独プロジェクト**
 ```
-/tmp/maxam/yuki/MAXAM/      # YukiのMAXAM作業
-/tmp/maxam/yuki/HOGEHOGE/   # YukiのHOGEHOGE作業
+/tmp/maxam/yuki/MAXAM/      # ~/MAXAMで作業
 /tmp/maxam/priya/MAXAM/     # PriyaのMAXAM作業
-/tmp/maxam/priya/HOGEHOGE/  # PriyaのHOGEHOGE作業
+```
+
+**例：ネストしたサブプロジェクト（親ディレクトリ配下に複数リポジトリ）**
+```
+~/calcium-lang/             # 親ディレクトリ（gitリポジトリではない）
+├── calcium/               # リポジトリ1
+├── boneyard/              # リポジトリ2
+└── json/                  # リポジトリ3
+
+↓ worktreeパス（_で連結）
+
+/tmp/maxam/yuki/calcium-lang_calcium/    # calcium-lang/calcium
+/tmp/maxam/yuki/calcium-lang_boneyard/   # calcium-lang/boneyard
+/tmp/maxam/yuki/calcium-lang_json/       # calcium-lang/json
+```
+
+**例：深いネストの場合**
+```
+~/some/deep/project/ → /tmp/maxam/yuki/project/
+~/parent/child/grandchild/ → /tmp/maxam/yuki/parent_child_grandchild/
 ```
 
 ### 運用ルール
 
 1. **作業開始時**: worktreeが存在しなければ作成
    ```bash
+   # 単独リポジトリ
    git worktree add /tmp/maxam/{name}/{project} {branch}
+
+   # ネストしたリポジトリ（親ディレクトリ名を含める）
+   git worktree add /tmp/maxam/{name}/{parent}_{child} {branch}
    ```
 2. **ブランチ管理**: worktree内で自由に切り替えOK
 3. **マシン再起動時**: `/tmp`は消えるので再作成
+4. **サブプロジェクト検出**: MAXAMは起動時に配下のgitリポジトリを自動検出
 
 ### 備考
 
@@ -133,6 +159,7 @@ type: feat, fix, refactor, docs, test, chore
 - 他メンバーは自分のworktreeで独立して作業可能
 - 衝突を気にせず並列作業できる
 - `/tmp/maxam/` 配下はMAXAMチーム共通の作業場所として、複数プロジェクトを管理
+- **サブプロジェクト対応**: 親ディレクトリ配下のgitリポジトリを再帰的に検出し、コンテキストに含める
 
 ## 学習事項
 
