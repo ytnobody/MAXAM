@@ -28,6 +28,8 @@ func main() {
 		runReview()
 	case "ask":
 		runAsk()
+	case "analyze":
+		runAnalyze()
 	case "status":
 		showStatus()
 	case "help":
@@ -49,6 +51,7 @@ Commands:
   task <description>   Submit a task to Yuki for implementation
   review <description> Run a full review cycle (Yuki → Priya)
   ask <agent> <prompt> Ask a specific agent a question
+  analyze              Run Amara's weekly analysis
   status               Show team status
   help                 Show this help
 
@@ -171,6 +174,37 @@ func runAsk() {
 	}
 
 	fmt.Println(result)
+}
+
+func runAnalyze() {
+	workDir := getWorkDir()
+
+	fmt.Println("MAXAM Weekly Analysis")
+	fmt.Println("=====================")
+
+	agents := agent.NewAgents(workDir)
+	router := comms.NewRouter(filepath.Join(workDir, "comms"))
+	logMgr := logger.NewManager(filepath.Join(workDir, "logs"))
+	defer logMgr.Close()
+
+	analysisCycle := workflow.NewAnalysisCycle(agents, router, logMgr, workDir)
+
+	ctx := context.Background()
+	result, err := analysisCycle.Run(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("\n=== Analysis Report ===")
+	fmt.Println(result.Report)
+
+	if len(result.Recommendations) > 0 {
+		fmt.Println("\n=== Recommendations ===")
+		for i, rec := range result.Recommendations {
+			fmt.Printf("%d. %s\n", i+1, rec)
+		}
+	}
 }
 
 func showStatus() {

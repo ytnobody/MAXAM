@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/anthropics/maxam/internal/comms"
 	gh "github.com/anthropics/maxam/internal/github"
 	"github.com/anthropics/maxam/internal/logger"
+	sl "github.com/anthropics/maxam/internal/slack"
 )
 
 type Orchestrator struct {
@@ -27,6 +29,10 @@ type Orchestrator struct {
 
 	// GitHub client (optional)
 	ghClient *gh.Client
+
+	// Slack client (optional)
+	slackClient  *sl.Client
+	slackHandler *sl.Handler
 }
 
 func main() {
@@ -117,6 +123,38 @@ func (o *Orchestrator) init() error {
 	o.webhook = gh.NewWebhookHandler(secret)
 	o.setupWebhookHandlers()
 	fmt.Println("  Webhook: Ready")
+
+	// Initialize Slack client (optional)
+	if botToken := os.Getenv("SLACK_BOT_TOKEN"); botToken != "" {
+		appToken := os.Getenv("SLACK_APP_TOKEN")
+		if appToken != "" {
+			waitSecs := 120
+			if w := os.Getenv("SLACK_WAIT_SECONDS"); w != "" {
+				if parsed, err := strconv.Atoi(w); err == nil {
+					waitSecs = parsed
+				}
+			}
+
+			slackClient, err := sl.NewClient(sl.Config{
+				BotToken:    botToken,
+				AppToken:    appToken,
+				WaitSeconds: waitSecs,
+			})
+			if err != nil {
+				fmt.Printf("  Slack: Failed (%v)\n", err)
+			} else {
+				o.slackClient = slackClient
+				o.slackHandler = sl.NewHandler(slackClient, o.agents, o.router, o.logMgr)
+
+				// Start Slack in background
+				ctx := context.Background()
+				o.slackClient.Start(ctx, o.slackHandler.HandleMessages)
+				go o.slackClient.Run()
+
+				fmt.Printf("  Slack: Ready (wait %ds)\n", waitSecs)
+			}
+		}
+	}
 
 	return nil
 }
