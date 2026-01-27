@@ -61,19 +61,117 @@ func (h *Handler) handleChannelMessages(channel string, msgs []*IncomingMessage)
 	}
 	customerInput := combined.String()
 
+	// Check for agent mentions
+	mentionedAgent := h.detectAgentMention(msgs)
+
 	// Add thinking reaction
 	h.client.AddReaction(channel, msgs[len(msgs)-1].Timestamp, "thinking_face")
 
-	// Log incoming messages
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	var result string
+	var agentName string
+	var err error
+	start := time.Now()
+
+	if mentionedAgent != "" {
+		// Direct message to specific agent
+		result, agentName, err = h.handleDirectMention(ctx, mentionedAgent, customerInput)
+	} else {
+		// Default: Mei handles the conversation
+		result, agentName, err = h.handleMeiDefault(ctx, customerInput)
+	}
+
+	elapsed := time.Since(start)
+
+	// Log work
+	if log, err := h.logMgr.Get(strings.ToLower(strings.Split(agentName, " ")[0])); err == nil {
+		log.LogSimple(customerInput, result, elapsed)
+	}
+
+	// Remove thinking reaction, add done
+	h.client.AddReaction(channel, msgs[len(msgs)-1].Timestamp, "white_check_mark")
+
+	if err != nil {
+		h.client.PostMessageAsAgent(channel, agentName,
+			"申し訳ありません、処理中にエラーが発生しました。",
+			threadTS)
+		return
+	}
+
+	// Send response
+	if mentionedAgent != "" {
+		// Direct response from mentioned agent
+		h.client.PostMessageAsAgent(channel, agentName, result, threadTS)
+	} else {
+		// Mei's structured response
+		response := parseResponse(result)
+		if response.CustomerReply != "" {
+			h.client.PostMessageAsAgent(channel, "Mei Chen", response.CustomerReply, threadTS)
+		}
+		if response.TeamInstruction != "" {
+			h.handleTeamInstruction(response.TeamInstruction, channel, threadTS)
+		}
+	}
+}
+
+// detectAgentMention checks if any agent is mentioned in the messages
+func (h *Handler) detectAgentMention(msgs []*IncomingMessage) string {
+	for _, msg := range msgs {
+		text := strings.ToLower(msg.Text)
+
+		// Check for @mentions or name mentions
+		if strings.Contains(text, "@yuki") || strings.Contains(text, "ゆき") {
+			return "yuki"
+		}
+		if strings.Contains(text, "@priya") || strings.Contains(text, "プリヤ") {
+			return "priya"
+		}
+		if strings.Contains(text, "@amara") || strings.Contains(text, "アマラ") {
+			return "amara"
+		}
+		if strings.Contains(text, "@mei") || strings.Contains(text, "メイ") {
+			return "mei"
+		}
+	}
+	return ""
+}
+
+// handleDirectMention handles a message directed at a specific agent
+func (h *Handler) handleDirectMention(ctx context.Context, agentName, input string) (string, string, error) {
+	var runner *agent.Runner
+	var fullName string
+
+	switch agentName {
+	case "yuki":
+		runner = h.agents.Yuki()
+		fullName = "Yuki Tanaka"
+	case "priya":
+		runner = h.agents.Priya()
+		fullName = "Priya Sharma"
+	case "amara":
+		runner = h.agents.Amara()
+		fullName = "Amara Okonkwo"
+	case "mei":
+		runner = h.agents.Mei()
+		fullName = "Mei Chen"
+	default:
+		runner = h.agents.Mei()
+		fullName = "Mei Chen"
+	}
+
+	result, err := runner.Run(ctx, input)
+	return result, fullName, err
+}
+
+// handleMeiDefault handles messages through Mei (default behavior)
+func (h *Handler) handleMeiDefault(ctx context.Context, customerInput string) (string, string, error) {
 	h.router.Send("slack", "mei", &comms.Message{
 		Subject: "Customer inquiry",
 		Body:    customerInput,
 		Action:  "Analyze and respond",
 	})
-
-	// Let Mei handle the conversation
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
 
 	mei := h.agents.Mei()
 	prompt := fmt.Sprintf(`あなたはMAXAMチームのPM、Mei Chenです。
@@ -88,35 +186,8 @@ func (h *Handler) handleChannelMessages(channel string, msgs []*IncomingMessage)
 顧客への返答は「## 返答」セクションに書いてください。
 チームへの指示がある場合は「## チーム指示」セクションに書いてください。`, customerInput)
 
-	start := time.Now()
 	result, err := mei.Run(ctx, prompt)
-	elapsed := time.Since(start)
-
-	// Log Mei's work
-	if log, err := h.logMgr.Get("mei"); err == nil {
-		log.LogSimple(customerInput, result, elapsed)
-	}
-
-	// Remove thinking reaction, add done
-	h.client.AddReaction(channel, msgs[len(msgs)-1].Timestamp, "white_check_mark")
-
-	if err != nil {
-		h.client.PostMessageAsAgent(channel, "Mei Chen",
-			"申し訳ありません、処理中にエラーが発生しました。少々お待ちください。",
-			threadTS)
-		return
-	}
-
-	// Parse and send response
-	response := parseResponse(result)
-	if response.CustomerReply != "" {
-		h.client.PostMessageAsAgent(channel, "Mei Chen", response.CustomerReply, threadTS)
-	}
-
-	// Handle team instructions
-	if response.TeamInstruction != "" {
-		h.handleTeamInstruction(response.TeamInstruction, channel, threadTS)
-	}
+	return result, "Mei Chen", err
 }
 
 type parsedResponse struct {
