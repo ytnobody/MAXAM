@@ -23,7 +23,7 @@ func main() {
 
 	// Initialize components
 	agents := agent.NewAgents(workDir)
-	logMgr := logger.NewManager(filepath.Join(workDir, "logs"))
+	logMgr := logger.NewManager(filepath.Join(workDir, "logs"), workDir)
 	defer logMgr.Close()
 
 	// Create review cycle workflow

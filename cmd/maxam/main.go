@@ -126,7 +126,7 @@ func runReview() {
 	fmt.Printf("Task: %s\n", task)
 
 	agents := agent.NewAgents(workDir)
-	logMgr := logger.NewManager(filepath.Join(workDir, "logs"))
+	logMgr := logger.NewManager(filepath.Join(workDir, "logs"), workDir)
 	defer logMgr.Close()
 
 	reviewCycle := workflow.NewReviewCycle(agents, logMgr)
@@ -187,7 +187,7 @@ func runAnalyze() {
 	fmt.Println("=====================")
 
 	agents := agent.NewAgents(workDir)
-	logMgr := logger.NewManager(filepath.Join(workDir, "logs"))
+	logMgr := logger.NewManager(filepath.Join(workDir, "logs"), workDir)
 	defer logMgr.Close()
 
 	analysisCycle := workflow.NewAnalysisCycle(agents, logMgr, workDir)

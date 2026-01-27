@@ -38,7 +38,7 @@ func runChat() {
 
 	session := &ChatSession{
 		agents:  agent.NewAgents(workDir),
-		logMgr:  logger.NewManager(filepath.Join(workDir, "logs")),
+		logMgr:  logger.NewManager(filepath.Join(workDir, "logs"), workDir),
 		workDir: workDir,
 		history: make([]chatMessage, 0),
 	}

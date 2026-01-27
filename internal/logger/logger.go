@@ -5,8 +5,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
+
+// ProjectNameFromPath converts a directory path to a project name.
+// Example: /home/ubuntu/my-project -> home_ubuntu_my-project
+func ProjectNameFromPath(path string) string {
+	// Clean and get absolute path
+	cleaned := filepath.Clean(path)
+	// Remove leading slash and convert to underscore-separated
+	trimmed := strings.TrimPrefix(cleaned, string(filepath.Separator))
+	return strings.ReplaceAll(trimmed, string(filepath.Separator), "_")
+}
 
 // Entry represents a log entry
 type Entry struct {
@@ -104,14 +115,45 @@ type Manager struct {
 	loggers map[string]*Logger
 }
 
-// NewManager creates a new logger manager
-func NewManager(baseDir string) *Manager {
-	// Ensure base directory exists
-	os.MkdirAll(baseDir, 0755)
+// NewManager creates a new logger manager with project-specific subdirectory.
+// baseDir: logs directory (e.g., /path/to/MAXAM/logs)
+// projectDir: working directory for the project (used to generate project name)
+func NewManager(baseDir, projectDir string) *Manager {
+	projectName := ProjectNameFromPath(projectDir)
+	fullDir := filepath.Join(baseDir, projectName)
+
+	// Migrate existing logs if needed
+	migrateExistingLogs(baseDir, projectName)
+
+	// Ensure directory exists
+	os.MkdirAll(fullDir, 0755)
 
 	return &Manager{
-		baseDir: baseDir,
+		baseDir: fullDir,
 		loggers: make(map[string]*Logger),
+	}
+}
+
+// migrateExistingLogs moves old agent directories to project-specific directory
+func migrateExistingLogs(baseDir, projectName string) {
+	agents := []string{"mei", "yuki", "priya", "amara"}
+	targetDir := filepath.Join(baseDir, projectName)
+
+	for _, agent := range agents {
+		oldPath := filepath.Join(baseDir, agent)
+		newPath := filepath.Join(targetDir, agent)
+
+		// Check if old-style directory exists and new-style doesn't
+		if info, err := os.Stat(oldPath); err == nil && info.IsDir() {
+			if _, err := os.Stat(newPath); os.IsNotExist(err) {
+				// Create target directory and move
+				os.MkdirAll(targetDir, 0755)
+				if err := os.Rename(oldPath, newPath); err != nil {
+					// If rename fails (cross-device), skip
+					continue
+				}
+			}
+		}
 	}
 }
 
