@@ -97,6 +97,11 @@ type agentResponseMsg struct {
 	chainDepth int    // 連鎖の深さ
 }
 
+// analysisTickMsg は1時間ごとの軽量分析トリガー
+type analysisTickMsg struct {
+	time time.Time
+}
+
 const maxChainDepth = 1000          // 最大連鎖数
 const meiInterventionInterval = 10  // Meiが介入する間隔
 
@@ -138,7 +143,14 @@ func initialTuiModel(workDir string) tuiModel {
 }
 
 func (m tuiModel) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, tea.EnterAltScreen)
+	return tea.Batch(textinput.Blink, tea.EnterAltScreen, m.tickAnalysis())
+}
+
+// tickAnalysis は1時間後に軽量分析をトリガーするtickを設定
+func (m tuiModel) tickAnalysis() tea.Cmd {
+	return tea.Tick(time.Hour, func(t time.Time) tea.Msg {
+		return analysisTickMsg{time: t}
+	})
 }
 
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -279,6 +291,18 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.textInput.Width = msg.Width - 8
 		m.updateViewport()
+
+	case analysisTickMsg:
+		// 1時間ごとの軽量分析トリガー
+		// Amaraが処理中でなく、会話がある場合のみ実行
+		if !m.processingAgents["amara"] && len(m.messages) > 0 {
+			m.processingAgents["amara"] = true
+			return m, tea.Batch(
+				m.runLightweightAnalysis(),
+				m.tickAnalysis(), // 次のtick予約
+			)
+		}
+		return m, m.tickAnalysis()
 
 	case agentResponseMsg:
 		// エージェントの処理状態をクリア
@@ -700,6 +724,123 @@ func getAgentStyle(name string) lipgloss.Style {
 	default:
 		return lipgloss.NewStyle()
 	}
+}
+
+// runLightweightAnalysis は1時間ごとの軽量分析を実行
+func (m *tuiModel) runLightweightAnalysis() tea.Cmd {
+	return func() tea.Msg {
+		// 直近1時間のメッセージを取得
+		recentMessages := m.getRecentMessages(time.Hour)
+		if len(recentMessages) == 0 {
+			// 分析対象がなければ何もしない
+			return agentResponseMsg{
+				agent:   "amara",
+				content: "", // 空なら表示しない
+				err:     nil,
+			}
+		}
+
+		// 軽量分析用プロンプトを構築
+		prompt := m.buildLightweightAnalysisPrompt(recentMessages)
+
+		// Amaraを実行
+		runner, _ := m.agents.Get("amara")
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		start := time.Now()
+		result, err := runner.Run(ctx, prompt)
+		elapsed := time.Since(start)
+
+		result = strings.TrimSpace(result)
+
+		// 「特になし」相当の場合は空にする
+		if isNoIssueResponse(result) {
+			result = ""
+		}
+
+		return agentResponseMsg{
+			agent:      "amara",
+			content:    result,
+			elapsed:    elapsed,
+			err:        err,
+			nextAgent:  "",
+			chainDepth: 0,
+		}
+	}
+}
+
+// getRecentMessages は指定された期間内のメッセージを取得
+func (m *tuiModel) getRecentMessages(duration time.Duration) []tuiMessage {
+	if m.history == nil {
+		return nil
+	}
+
+	cutoff := time.Now().Add(-duration)
+	allMessages := m.history.GetAll()
+	var recent []tuiMessage
+
+	for _, msg := range allMessages {
+		if msg.Timestamp.After(cutoff) {
+			recent = append(recent, tuiMessage{
+				role:    msg.Role,
+				content: msg.Content,
+			})
+		}
+	}
+
+	return recent
+}
+
+// buildLightweightAnalysisPrompt は軽量分析用のプロンプトを構築
+func (m *tuiModel) buildLightweightAnalysisPrompt(messages []tuiMessage) string {
+	var sb strings.Builder
+
+	sb.WriteString(`あなたはAmaraです。直近1時間のチーム会話を確認し、気づいた点があれば短くコメントしてください。
+
+## 確認観点
+- 差し戻しや要件不明確がなかったか
+- コミュニケーションで問題がなかったか
+- 効率化できそうなパターンがあるか
+
+## 出力ルール
+- 特に気になる点がなければ「特になし」とだけ出力
+- 気づきがあれば1-2文で簡潔に
+- Issue化が必要そうなら「Issueにしておく？」と確認
+- 長い説明は不要
+
+## 直近1時間の会話
+`)
+
+	for _, msg := range messages {
+		if msg.role == "user" {
+			sb.WriteString(fmt.Sprintf("オーナー: %s\n", msg.content))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s: %s\n", getTuiFullName(msg.role), msg.content))
+		}
+	}
+
+	return sb.String()
+}
+
+// isNoIssueResponse は「特になし」相当の返答かどうか判定
+func isNoIssueResponse(response string) bool {
+	lower := strings.ToLower(response)
+	noIssuePatterns := []string{
+		"特になし",
+		"特に問題なし",
+		"特に気になる点はない",
+		"問題なし",
+		"異常なし",
+		"nothing to report",
+		"no issues",
+	}
+	for _, pattern := range noIssuePatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func runTeamChat() {
