@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
+	"github.com/ytnobody/MAXAM/internal/history"
 	"github.com/ytnobody/MAXAM/internal/logger"
 )
 
@@ -71,6 +72,7 @@ type tuiMessage struct {
 type tuiModel struct {
 	agents         *agent.Agents
 	logMgr         *logger.Manager
+	history        *history.History
 	workDir        string
 	projectContext string
 
@@ -104,12 +106,31 @@ func initialTuiModel(workDir string) tuiModel {
 	ti.Focus()
 	ti.Width = 80
 
+	// Load chat history
+	hist, err := history.New("")
+	if err != nil {
+		// Continue without history if error
+		hist = nil
+	}
+
+	// Convert persisted history to messages
+	messages := make([]tuiMessage, 0)
+	if hist != nil {
+		for _, msg := range hist.GetAll() {
+			messages = append(messages, tuiMessage{
+				role:    msg.Role,
+				content: msg.Content,
+			})
+		}
+	}
+
 	return tuiModel{
 		agents:    agent.NewAgents(workDir),
 		logMgr:    logger.NewManager(filepath.Join(workDir, "logs")),
+		history:   hist,
 		workDir:   workDir,
 		textInput: ti,
-		messages:  make([]tuiMessage, 0),
+		messages:  messages,
 		inputHist: make([]string, 0),
 		histIdx:   -1,
 	}
@@ -146,6 +167,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if input == "clear" {
 				m.messages = make([]tuiMessage, 0)
+				if m.history != nil {
+					m.history.Clear()
+				}
 				m.textInput.SetValue("")
 				m.updateViewport()
 				return m, nil
@@ -158,6 +182,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Add user message
 			m.messages = append(m.messages, tuiMessage{role: "user", content: input})
+			if m.history != nil {
+				m.history.Add("user", input)
+			}
 			m.textInput.SetValue("")
 			m.processing = true
 			m.updateViewport()
@@ -257,6 +284,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			role:    msg.agent,
 			content: msg.content,
 		})
+
+		// Save to persistent history
+		if m.history != nil {
+			m.history.Add(msg.agent, msg.content)
+		}
 
 		// Log
 		if len(m.messages) >= 2 {
