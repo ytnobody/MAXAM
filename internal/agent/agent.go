@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/anthropics/maxam/internal/mcp"
+	"github.com/ytnobody/MAXAM/internal/mcp"
 )
 
 // Agent represents an AI agent with a specific persona

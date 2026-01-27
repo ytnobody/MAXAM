@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anthropics/maxam/internal/agent"
-	"github.com/anthropics/maxam/internal/comms"
-	"github.com/anthropics/maxam/internal/logger"
+	"github.com/ytnobody/MAXAM/internal/agent"
+	"github.com/ytnobody/MAXAM/internal/comms"
+	"github.com/ytnobody/MAXAM/internal/logger"
 )
 
 // AnalysisCycle represents Amara's weekly analysis workflow

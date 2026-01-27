@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/anthropics/maxam/internal/agent"
-	"github.com/anthropics/maxam/internal/comms"
-	"github.com/anthropics/maxam/internal/logger"
-	"github.com/anthropics/maxam/internal/workflow"
+	"github.com/ytnobody/MAXAM/internal/agent"
+	"github.com/ytnobody/MAXAM/internal/comms"
+	"github.com/ytnobody/MAXAM/internal/logger"
+	"github.com/ytnobody/MAXAM/internal/workflow"
 )
 
 func main() {

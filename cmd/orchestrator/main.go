@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anthropics/maxam/internal/agent"
-	"github.com/anthropics/maxam/internal/comms"
-	gh "github.com/anthropics/maxam/internal/github"
-	"github.com/anthropics/maxam/internal/logger"
-	sl "github.com/anthropics/maxam/internal/slack"
+	"github.com/ytnobody/MAXAM/internal/agent"
+	"github.com/ytnobody/MAXAM/internal/comms"
+	gh "github.com/ytnobody/MAXAM/internal/github"
+	"github.com/ytnobody/MAXAM/internal/logger"
+	sl "github.com/ytnobody/MAXAM/internal/slack"
 )
 
 type Orchestrator struct {

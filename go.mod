@@ -1,4 +1,4 @@
-module github.com/anthropics/maxam
+module github.com/ytnobody/MAXAM
 
 go 1.24.0
 

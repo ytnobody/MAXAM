@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/anthropics/maxam/internal/agent"
+	"github.com/ytnobody/MAXAM/internal/agent"
 )
 
 func main() {
