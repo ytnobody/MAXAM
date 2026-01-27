@@ -165,9 +165,17 @@ MAXAM/
 ログ蓄積 → Amara分析 → CLAUDE.md更新
 ```
 
+## コントリビューション
+
+コントリビューションを歓迎します！詳しくは [CONTRIBUTING.md](CONTRIBUTING.md) をご覧ください。
+
+## セキュリティ
+
+セキュリティに関する問題を発見された場合は [SECURITY.md](SECURITY.md) をご確認ください。
+
 ## ライセンス
 
-Private
+MIT License - 詳細は [LICENSE](LICENSE) を参照してください。
 
 ## 作者
 
