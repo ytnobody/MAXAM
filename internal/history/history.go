@@ -111,14 +111,19 @@ func (h *History) load() error {
 	return json.Unmarshal(data, h)
 }
 
-// save writes history to disk
+// save writes history to disk atomically
 func (h *History) save() error {
 	data, err := json.MarshalIndent(h, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(h.filePath, data, 0644)
+	// Write to temp file first, then rename for atomic operation
+	tmpPath := h.filePath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, h.filePath)
 }
 
 // Path returns the history file path
