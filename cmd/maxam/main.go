@@ -28,6 +28,8 @@ func main() {
 		runReview()
 	case "ask":
 		runAsk()
+	case "chat":
+		runChat()
 	case "analyze":
 		runAnalyze()
 	case "status":
@@ -48,6 +50,7 @@ Usage:
   maxam <command> [arguments]
 
 Commands:
+  chat <agent>         Interactive chat with an agent (mei/yuki/priya/amara/team)
   task <description>   Submit a task to Yuki for implementation
   review <description> Run a full review cycle (Yuki → Priya)
   ask <agent> <prompt> Ask a specific agent a question

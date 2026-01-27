@@ -40,7 +40,12 @@ go build -o bin/orchestrator ./cmd/orchestrator
 # レビューサイクル実行 (Yuki実装 → Priyaレビュー)
 ./bin/maxam review "Add関数のユニットテストを作成して"
 
-# 特定のエージェントに質問
+# 対話モード（情報不足時は質問してくれる）
+./bin/maxam chat yuki   # Yukiと対話
+./bin/maxam chat mei    # Meiと対話
+./bin/maxam chat team   # チーム全体と対話（Meiが窓口、@yukiなどでメンション可）
+
+# 単発の質問
 ./bin/maxam ask mei "このプロジェクトの状況を教えて"
 ./bin/maxam ask yuki "キャッシュの実装方法は？"
 ./bin/maxam ask priya "このコードにセキュリティ上の問題はある？"
