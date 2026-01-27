@@ -27,3 +27,6 @@ logs/*/*.md
 .env
 *.pem
 *.key
+
+# Local settings
+.claude/settings.local.json
