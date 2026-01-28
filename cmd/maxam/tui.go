@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/history"
@@ -110,7 +111,10 @@ type tuiModel struct {
 	// View switching
 	currentView viewMode
 	tasklist    tasklist.Model
-	taskService taskboard.Service
+	taskService *taskboard.FileStore
+
+	// File watcher
+	taskWatcher *fsnotify.Watcher
 }
 
 type agentResponseMsg struct {
@@ -154,9 +158,25 @@ func initialTuiModel(workDir string) tuiModel {
 		}
 	}
 
-	// Initialize taskboard service and tasklist
-	taskService := taskboard.NewMemoryStore()
-	tasklistModel := tasklist.New(taskService)
+	// Initialize taskboard service (file-based) and tasklist
+	taskService, err := taskboard.NewFileStore("")
+	if err != nil {
+		// Fallback: continue without file store
+		taskService = nil
+	}
+	var tasklistModel tasklist.Model
+	if taskService != nil {
+		tasklistModel = tasklist.New(taskService)
+	}
+
+	// Setup file watcher for task file
+	var taskWatcher *fsnotify.Watcher
+	if taskService != nil {
+		taskWatcher, _ = fsnotify.NewWatcher()
+		if taskWatcher != nil {
+			taskWatcher.Add(taskService.FilePath())
+		}
+	}
 
 	return tuiModel{
 		agents:           agent.NewAgents(workDir),
@@ -171,11 +191,40 @@ func initialTuiModel(workDir string) tuiModel {
 		currentView:      viewChat,
 		tasklist:         tasklistModel,
 		taskService:      taskService,
+		taskWatcher:      taskWatcher,
 	}
 }
 
+// taskFileChangedMsg is sent when the task file is modified externally
+type taskFileChangedMsg struct{}
+
 func (m tuiModel) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, tea.EnterAltScreen, m.tickAnalysis())
+	cmds := []tea.Cmd{textinput.Blink, tea.EnterAltScreen, m.tickAnalysis()}
+	if m.taskWatcher != nil {
+		cmds = append(cmds, m.watchTaskFile())
+	}
+	return tea.Batch(cmds...)
+}
+
+// watchTaskFile watches for changes to the task file
+func (m tuiModel) watchTaskFile() tea.Cmd {
+	return func() tea.Msg {
+		if m.taskWatcher == nil {
+			return nil
+		}
+		select {
+		case event, ok := <-m.taskWatcher.Events:
+			if !ok {
+				return nil
+			}
+			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+				return taskFileChangedMsg{}
+			}
+		case <-m.taskWatcher.Errors:
+			// Ignore errors
+		}
+		return nil
+	}
 }
 
 // tickAnalysis は1時間後に軽量分析をトリガーするtickを設定
@@ -193,6 +242,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			m.logMgr.Close()
+			if m.taskWatcher != nil {
+				m.taskWatcher.Close()
+			}
 			return m, tea.Quit
 
 		case tea.KeyTab:
@@ -223,6 +275,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if input == "exit" || input == "quit" {
 				m.logMgr.Close()
+				if m.taskWatcher != nil {
+					m.taskWatcher.Close()
+				}
 				return m, tea.Quit
 			}
 
@@ -366,6 +421,18 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.textInput.Width = msg.Width - 8
 		m.updateViewport()
+
+	case taskFileChangedMsg:
+		// Task file was modified externally - reload and refresh
+		if m.taskService != nil {
+			m.taskService.Reload()
+			m.tasklist.Refresh()
+		}
+		// Continue watching
+		if m.taskWatcher != nil {
+			return m, m.watchTaskFile()
+		}
+		return m, nil
 
 	case analysisTickMsg:
 		// 1時間ごとの軽量分析トリガー
