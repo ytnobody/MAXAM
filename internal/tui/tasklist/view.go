@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/ytnobody/MAXAM/internal/taskboard"
 )
 
 var (
@@ -23,7 +24,7 @@ var (
 			Foreground(lipgloss.Color("#FFAA00")).
 			Bold(true)
 
-	doneStyle = lipgloss.NewStyle().
+	completedStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#00FF00"))
 
 	// Task item styles
@@ -47,7 +48,7 @@ var (
 )
 
 // Render renders the task list view.
-func Render(tasks []Task, cursor int, width int) string {
+func Render(tasks []*taskboard.Task, cursor int, width int) string {
 	var b strings.Builder
 
 	// Title
@@ -76,7 +77,7 @@ func Render(tasks []Task, cursor int, width int) string {
 }
 
 // renderTaskLine renders a single task line.
-func renderTaskLine(task Task, selected bool) string {
+func renderTaskLine(task *taskboard.Task, selected bool) string {
 	// Status indicator
 	statusIcon := getStatusIcon(task.Status)
 	statusStr := renderStatus(task.Status)
@@ -101,13 +102,13 @@ func renderTaskLine(task Task, selected bool) string {
 }
 
 // getStatusIcon returns an icon for the status.
-func getStatusIcon(status Status) string {
+func getStatusIcon(status taskboard.Status) string {
 	switch status {
-	case StatusPending:
+	case taskboard.StatusPending:
 		return "○"
-	case StatusInProgress:
+	case taskboard.StatusInProgress:
 		return "◐"
-	case StatusDone:
+	case taskboard.StatusCompleted:
 		return "●"
 	default:
 		return "?"
@@ -115,16 +116,16 @@ func getStatusIcon(status Status) string {
 }
 
 // renderStatus renders the status with appropriate styling.
-func renderStatus(status Status) string {
+func renderStatus(status taskboard.Status) string {
 	switch status {
-	case StatusPending:
-		return pendingStyle.Render(status.String())
-	case StatusInProgress:
-		return inProgressStyle.Render(status.String())
-	case StatusDone:
-		return doneStyle.Render(status.String())
+	case taskboard.StatusPending:
+		return pendingStyle.Render("Pending")
+	case taskboard.StatusInProgress:
+		return inProgressStyle.Render("In Progress")
+	case taskboard.StatusCompleted:
+		return completedStyle.Render("Completed")
 	default:
-		return status.String()
+		return string(status)
 	}
 }
 

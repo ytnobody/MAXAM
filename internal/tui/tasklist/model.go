@@ -1,8 +1,11 @@
 package tasklist
 
 import (
+	"context"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ytnobody/MAXAM/internal/taskboard"
 )
 
 // KeyMap defines the key bindings for the task list.
@@ -42,19 +45,20 @@ func DefaultKeyMap() KeyMap {
 
 // Model is the Bubble Tea model for the task list component.
 type Model struct {
-	tasks    []Task
-	cursor   int
-	service  TaskService
-	keyMap   KeyMap
-	width    int
-	height   int
-	focused  bool
+	tasks   []*taskboard.Task
+	cursor  int
+	service taskboard.Service
+	keyMap  KeyMap
+	width   int
+	height  int
+	focused bool
 }
 
 // New creates a new task list model.
-func New(service TaskService) Model {
+func New(service taskboard.Service) Model {
+	tasks, _ := service.List(context.Background())
 	return Model{
-		tasks:   service.List(),
+		tasks:   tasks,
 		cursor:  0,
 		service: service,
 		keyMap:  DefaultKeyMap(),
@@ -113,28 +117,29 @@ func (m Model) View() string {
 	return Render(m.tasks, m.cursor, m.width)
 }
 
-// cycleStatus cycles through task statuses: pending -> in_progress -> done -> pending
+// cycleStatus cycles through task statuses: pending -> in_progress -> completed -> pending
 func (m *Model) cycleStatus() {
 	if m.cursor >= len(m.tasks) {
 		return
 	}
 
 	task := m.tasks[m.cursor]
-	var newStatus Status
+	var newStatus taskboard.Status
 
 	switch task.Status {
-	case StatusPending:
-		newStatus = StatusInProgress
-	case StatusInProgress:
-		newStatus = StatusDone
-	case StatusDone:
-		newStatus = StatusPending
+	case taskboard.StatusPending:
+		newStatus = taskboard.StatusInProgress
+	case taskboard.StatusInProgress:
+		newStatus = taskboard.StatusCompleted
+	case taskboard.StatusCompleted:
+		newStatus = taskboard.StatusPending
 	default:
-		newStatus = StatusPending
+		newStatus = taskboard.StatusPending
 	}
 
-	if err := m.service.UpdateStatus(task.ID, newStatus); err == nil {
-		m.tasks = m.service.List()
+	task.Status = newStatus
+	if err := m.service.Update(context.Background(), task); err == nil {
+		m.refreshTasks()
 	}
 }
 
@@ -145,8 +150,8 @@ func (m *Model) deleteCurrentTask() {
 	}
 
 	task := m.tasks[m.cursor]
-	if err := m.service.Delete(task.ID); err == nil {
-		m.tasks = m.service.List()
+	if err := m.service.Delete(context.Background(), task.ID); err == nil {
+		m.refreshTasks()
 		// Adjust cursor if needed
 		if m.cursor >= len(m.tasks) && m.cursor > 0 {
 			m.cursor--
@@ -154,9 +159,16 @@ func (m *Model) deleteCurrentTask() {
 	}
 }
 
-// Refresh reloads tasks from the service.
+// refreshTasks reloads tasks from the service.
+func (m *Model) refreshTasks() {
+	if tasks, err := m.service.List(context.Background()); err == nil {
+		m.tasks = tasks
+	}
+}
+
+// Refresh reloads tasks from the service (public method).
 func (m *Model) Refresh() {
-	m.tasks = m.service.List()
+	m.refreshTasks()
 }
 
 // SetFocused sets whether the component is focused.
@@ -170,7 +182,7 @@ func (m Model) IsFocused() bool {
 }
 
 // Tasks returns the current list of tasks.
-func (m Model) Tasks() []Task {
+func (m Model) Tasks() []*taskboard.Task {
 	return m.tasks
 }
 
