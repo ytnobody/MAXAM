@@ -16,6 +16,8 @@ import (
 	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/history"
 	"github.com/ytnobody/MAXAM/internal/logger"
+	"github.com/ytnobody/MAXAM/internal/taskboard"
+	"github.com/ytnobody/MAXAM/internal/tui/tasklist"
 )
 
 // Theme colors for each agent
@@ -79,6 +81,14 @@ type tuiMessage struct {
 	content string
 }
 
+// viewMode represents the current view
+type viewMode int
+
+const (
+	viewChat viewMode = iota
+	viewTaskboard
+)
+
 type tuiModel struct {
 	agents         *agent.Agents
 	logMgr         *logger.Manager
@@ -96,6 +106,11 @@ type tuiModel struct {
 	processingAgents  map[string]bool // 各エージェントの処理状態
 	width             int
 	height            int
+
+	// View switching
+	currentView viewMode
+	tasklist    tasklist.Model
+	taskService taskboard.Service
 }
 
 type agentResponseMsg struct {
@@ -139,6 +154,10 @@ func initialTuiModel(workDir string) tuiModel {
 		}
 	}
 
+	// Initialize taskboard service and tasklist
+	taskService := taskboard.NewMemoryStore()
+	tasklistModel := tasklist.New(taskService)
+
 	return tuiModel{
 		agents:           agent.NewAgents(workDir),
 		logMgr:           logger.NewManager(logger.GetDefaultLogDir(), workDir),
@@ -149,6 +168,9 @@ func initialTuiModel(workDir string) tuiModel {
 		inputHist:        make([]string, 0),
 		processingAgents: make(map[string]bool),
 		histIdx:          -1,
+		currentView:      viewChat,
+		tasklist:         tasklistModel,
+		taskService:      taskService,
 	}
 }
 
@@ -173,7 +195,27 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logMgr.Close()
 			return m, tea.Quit
 
+		case tea.KeyTab:
+			// Toggle between chat and taskboard view
+			if m.currentView == viewChat {
+				m.currentView = viewTaskboard
+				m.tasklist.SetFocused(true)
+				m.tasklist.Refresh()
+			} else {
+				m.currentView = viewChat
+				m.tasklist.SetFocused(false)
+			}
+			return m, nil
+
 		case tea.KeyEnter:
+			// タスクボードビューの場合はtasklistに委譲
+			if m.currentView == viewTaskboard {
+				var cmd tea.Cmd
+				newModel, cmd := m.tasklist.Update(msg)
+				m.tasklist = newModel.(tasklist.Model)
+				return m, cmd
+			}
+
 			input := strings.TrimSpace(m.textInput.Value())
 			if input == "" {
 				return m, nil
@@ -226,6 +268,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case tea.KeyUp:
+			// タスクボードビューの場合はtasklistに委譲
+			if m.currentView == viewTaskboard {
+				var cmd tea.Cmd
+				newModel, cmd := m.tasklist.Update(msg)
+				m.tasklist = newModel.(tasklist.Model)
+				return m, cmd
+			}
 			if msg.Alt || tea.KeyMsg(msg).String() == "shift+up" {
 				// Shift+Up: scroll viewport up
 				m.viewport.LineUp(3)
@@ -246,6 +295,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case tea.KeyDown:
+			// タスクボードビューの場合はtasklistに委譲
+			if m.currentView == viewTaskboard {
+				var cmd tea.Cmd
+				newModel, cmd := m.tasklist.Update(msg)
+				m.tasklist = newModel.(tasklist.Model)
+				return m, cmd
+			}
 			if msg.Alt || tea.KeyMsg(msg).String() == "shift+down" {
 				// Shift+Down: scroll viewport down
 				m.viewport.LineDown(3)
@@ -270,6 +326,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyPgDown:
 			m.viewport.HalfViewDown()
 			return m, nil
+
+		default:
+			// タスクボードビューで'd'キーの場合はtasklistに委譲
+			if m.currentView == viewTaskboard && msg.String() == "d" {
+				var cmd tea.Cmd
+				newModel, cmd := m.tasklist.Update(msg)
+				m.tasklist = newModel.(tasklist.Model)
+				return m, cmd
+			}
 		}
 
 	case tea.MouseMsg:
@@ -521,30 +586,48 @@ func (m tuiModel) View() string {
 		return "読み込み中..."
 	}
 
-	// Header
-	header := titleStyle.Render("MAXAM Team Chat") + "  " +
-		helpStyle.Render("Mei(default) @yuki @priya @amara | exit:終了 clear:リセット")
-
-	// Footer with input
-	var status string
-	if len(m.processingAgents) > 0 {
-		var names []string
-		for name := range m.processingAgents {
-			names = append(names, getTuiFullName(name))
-		}
-		status = statusStyle.Render(fmt.Sprintf(" %s 処理中... ", strings.Join(names, ", ")))
+	// Header - ビューに応じてタイトルを切り替え
+	var header string
+	if m.currentView == viewTaskboard {
+		header = titleStyle.Render("MAXAM Task Board") + "  " +
+			helpStyle.Render("Tab:チャット | ↑↓:選択 Enter:ステータス変更 d:削除")
 	} else {
-		status = statusStyle.Render(fmt.Sprintf(" 履歴:%d ↑↓:履歴 PgUp/Dn:スクロール ", len(m.inputHist)))
+		header = titleStyle.Render("MAXAM Team Chat") + "  " +
+			helpStyle.Render("Tab:タスクボード | Mei(default) @yuki @priya @amara | exit:終了 clear:リセット")
 	}
 
-	inputLine := "You: " + m.textInput.View()
+	// Main content
+	var mainContent string
+	if m.currentView == viewTaskboard {
+		mainContent = m.tasklist.View()
+	} else {
+		mainContent = m.viewport.View()
+	}
 
-	footer := status + "\n" + inputLine
+	// Footer with input (チャットビューのみ)
+	var footer string
+	if m.currentView == viewChat {
+		var status string
+		if len(m.processingAgents) > 0 {
+			var names []string
+			for name := range m.processingAgents {
+				names = append(names, getTuiFullName(name))
+			}
+			status = statusStyle.Render(fmt.Sprintf(" %s 処理中... ", strings.Join(names, ", ")))
+		} else {
+			status = statusStyle.Render(fmt.Sprintf(" 履歴:%d ↑↓:履歴 PgUp/Dn:スクロール ", len(m.inputHist)))
+		}
+
+		inputLine := "You: " + m.textInput.View()
+		footer = status + "\n" + inputLine
+	} else {
+		footer = statusStyle.Render(" Tab:チャットに戻る ")
+	}
 
 	// Combine
 	return fmt.Sprintf("%s\n%s\n%s",
 		header,
-		m.viewport.View(),
+		mainContent,
 		footer,
 	)
 }
