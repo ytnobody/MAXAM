@@ -23,7 +23,7 @@ func main() {
 
 	switch cmd {
 	case "task":
-		runTask()
+		runTaskLegacy()
 	case "review":
 		runReview()
 	case "ask":
@@ -54,6 +54,8 @@ Commands:
   (none)               Launch team chat TUI (default)
   chat <agent>         Interactive chat with an agent (mei/yuki/rin/shiori/priya/amara/team)
   task <description>   Submit a task to Yuki for implementation
+  task add <title>     Add a task to the taskboard
+  task list            List all tasks on the taskboard
   review <description> Run a full review cycle (Yuki → Priya)
   ask <agent> <prompt> Ask a specific agent a question
   analyze              Run Amara's weekly analysis
@@ -70,7 +72,9 @@ Agents:
 
 Examples:
   maxam                                           # Start team chat
-  maxam task "Add a login button to the header"
+  maxam task add "Implement user authentication"  # Add task to board
+  maxam task list                                 # List all tasks
+  maxam task "Add a login button to the header"  # Delegate to Yuki
   maxam review "Create unit tests for the auth module"
   maxam ask yuki "How would you implement caching here?"`)
 }
@@ -84,35 +88,6 @@ func getWorkDir() string {
 	return dir
 }
 
-func runTask() {
-	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "Usage: maxam task <description>")
-		os.Exit(1)
-	}
-
-	task := strings.Join(os.Args[2:], " ")
-	workDir := getWorkDir()
-
-	fmt.Println("MAXAM Task Runner")
-	fmt.Println("=================")
-	fmt.Printf("Task: %s\n\n", task)
-
-	agents := agent.NewAgents(workDir)
-	yuki := agents.Yuki()
-
-	ctx := context.Background()
-	fmt.Println("[Yuki] Working on it...")
-
-	result, err := yuki.Run(ctx, task)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("\n[Yuki] Done.")
-	fmt.Println("\n--- Output ---")
-	fmt.Println(result)
-}
 
 func runReview() {
 	if len(os.Args) < 3 {
