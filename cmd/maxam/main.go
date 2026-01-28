@@ -56,6 +56,8 @@ Commands:
   task <description>   Submit a task to Yuki for implementation
   task add <title>     Add a task to the taskboard
   task list            List all tasks on the taskboard
+  task delete <id>     Delete a task by ID
+  task status <id> <s> Change task status (pending/in_progress/completed)
   review <description> Run a full review cycle (Yuki → Priya)
   ask <agent> <prompt> Ask a specific agent a question
   analyze              Run Amara's weekly analysis
@@ -74,6 +76,8 @@ Examples:
   maxam                                           # Start team chat
   maxam task add "Implement user authentication"  # Add task to board
   maxam task list                                 # List all tasks
+  maxam task delete 1                             # Delete task #1
+  maxam task status 1 in_progress                 # Change task #1 to in_progress
   maxam task "Add a login button to the header"  # Delegate to Yuki
   maxam review "Create unit tests for the auth module"
   maxam ask yuki "How would you implement caching here?"`)
