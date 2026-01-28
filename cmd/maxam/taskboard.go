@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
@@ -24,6 +25,10 @@ func runTaskboard() {
 		runTaskAdd()
 	case "list":
 		runTaskList()
+	case "delete", "rm":
+		runTaskDelete()
+	case "status":
+		runTaskStatus()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown task command: %s\n", subCmd)
 		printTaskboardUsage()
@@ -38,12 +43,17 @@ Commands:
   add <title> [--assignee <name>] [--desc <description>]
                          Add a new task to the taskboard
   list                   List all tasks
+  delete <id>            Delete a task by ID (alias: rm)
+  status <id> <status>   Change task status (pending/in_progress/completed)
 
 Examples:
   maxam task add "Implement login feature"
   maxam task add "Fix bug #42" --assignee yuki
   maxam task add "Update docs" --desc "Add API documentation"
-  maxam task list`)
+  maxam task list
+  maxam task delete 1
+  maxam task status 1 in_progress
+  maxam task status 1 completed`)
 }
 
 func runTaskAdd() {
@@ -144,6 +154,89 @@ func statusIcon(s taskboard.Status) string {
 	}
 }
 
+func runTaskDelete() {
+	if len(os.Args) < 4 {
+		fmt.Fprintln(os.Stderr, "Usage: maxam task delete <id>")
+		os.Exit(1)
+	}
+
+	id, err := strconv.Atoi(os.Args[3])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid task ID: %s\n", os.Args[3])
+		os.Exit(1)
+	}
+
+	store, err := taskboard.NewFileStore("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing task store: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := store.Delete(context.Background(), id); err != nil {
+		if err == taskboard.ErrNotFound {
+			fmt.Fprintf(os.Stderr, "Task #%d not found\n", id)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error deleting task: %v\n", err)
+		}
+		os.Exit(1)
+	}
+
+	fmt.Printf("Task #%d deleted\n", id)
+}
+
+func runTaskStatus() {
+	if len(os.Args) < 5 {
+		fmt.Fprintln(os.Stderr, "Usage: maxam task status <id> <status>")
+		fmt.Fprintln(os.Stderr, "Status: pending, in_progress, completed")
+		os.Exit(1)
+	}
+
+	id, err := strconv.Atoi(os.Args[3])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid task ID: %s\n", os.Args[3])
+		os.Exit(1)
+	}
+
+	statusStr := strings.ToLower(os.Args[4])
+	var status taskboard.Status
+	switch statusStr {
+	case "pending", "todo":
+		status = taskboard.StatusPending
+	case "in_progress", "inprogress", "doing":
+		status = taskboard.StatusInProgress
+	case "completed", "done":
+		status = taskboard.StatusCompleted
+	default:
+		fmt.Fprintf(os.Stderr, "Invalid status: %s\n", statusStr)
+		fmt.Fprintln(os.Stderr, "Valid: pending, in_progress, completed")
+		os.Exit(1)
+	}
+
+	store, err := taskboard.NewFileStore("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing task store: %v\n", err)
+		os.Exit(1)
+	}
+
+	task, err := store.Get(context.Background(), id)
+	if err != nil {
+		if err == taskboard.ErrNotFound {
+			fmt.Fprintf(os.Stderr, "Task #%d not found\n", id)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error getting task: %v\n", err)
+		}
+		os.Exit(1)
+	}
+
+	task.Status = status
+	if err := store.Update(context.Background(), task); err != nil {
+		fmt.Fprintf(os.Stderr, "Error updating task: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Task #%d status changed to %s\n", id, status)
+}
+
 // runTask is the legacy task command (for implementation requests)
 func runTaskLegacy() {
 	if len(os.Args) < 3 {
@@ -153,7 +246,7 @@ func runTaskLegacy() {
 
 	// Check if it's a taskboard subcommand
 	subCmd := strings.ToLower(os.Args[2])
-	if subCmd == "add" || subCmd == "list" {
+	if subCmd == "add" || subCmd == "list" || subCmd == "delete" || subCmd == "rm" || subCmd == "status" {
 		runTaskboard()
 		return
 	}
