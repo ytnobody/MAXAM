@@ -86,20 +86,42 @@ func (c *Client) GetIssue(ctx context.Context, number int) (*github.Issue, error
 
 // ListIssues lists open issues
 func (c *Client) ListIssues(ctx context.Context, labels []string) ([]*github.Issue, error) {
+	return c.ListIssuesWithOptions(ctx, "open", "", labels)
+}
+
+// ListIssuesWithOptions lists issues with filtering options
+func (c *Client) ListIssuesWithOptions(ctx context.Context, state, assignee string, labels []string) ([]*github.Issue, error) {
+	if state == "" {
+		state = "open"
+	}
+
 	opts := &github.IssueListByRepoOptions{
-		State:  "open",
+		State:  state,
 		Labels: labels,
 		ListOptions: github.ListOptions{
-			PerPage: 30,
+			PerPage: 100,
 		},
 	}
 
-	issues, _, err := c.client.Issues.ListByRepo(ctx, c.owner, c.repo, opts)
-	if err != nil {
-		return nil, fmt.Errorf("list issues: %w", err)
+	if assignee != "" {
+		opts.Assignee = assignee
 	}
 
-	return issues, nil
+	var allIssues []*github.Issue
+	for {
+		issues, resp, err := c.client.Issues.ListByRepo(ctx, c.owner, c.repo, opts)
+		if err != nil {
+			return nil, fmt.Errorf("list issues: %w", err)
+		}
+		allIssues = append(allIssues, issues...)
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return allIssues, nil
 }
 
 // AssignIssue assigns an issue to users
