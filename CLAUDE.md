@@ -10,7 +10,7 @@ MAXAMは複数のAIエージェントが協調して開発業務を遂行する�
 |------|------|
 | Mei Chen | 要件定義 + PM |
 | Yuki Tanaka | バックエンド + インフラ |
-| Rin Sato | フロントエンド |
+| Rin Sato | フロントエンド + バックエンド |
 | Shiori Tanaka | テスト + ドキュメント |
 | Priya Sharma | レビュー + セキュリティ + QA |
 | Amara Okonkwo | 分析 |
@@ -65,7 +65,7 @@ type: feat, fix, refactor, docs, test, chore
 ```
 @Yuki PR #XX レビューしました。
 - [MINOR] 変数名のtypo 1箇所
-- LGTM、上記修正後Approve予定
+- LGTM、上記修正後マージOK
 ```
 
 **なぜ両方か：**
