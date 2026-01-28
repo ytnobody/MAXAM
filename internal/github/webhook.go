@@ -22,11 +22,11 @@ type EventHandler func(payload json.RawMessage) error
 
 // Event types
 const (
-	EventIssues             = "issues"
-	EventIssueComment       = "issue_comment"
-	EventPullRequest        = "pull_request"
-	EventPullRequestReview  = "pull_request_review"
-	EventPush               = "push"
+	EventIssues            = "issues"
+	EventIssueComment      = "issue_comment"
+	EventPullRequest       = "pull_request"
+	EventPullRequestReview = "pull_request_review"
+	EventPush              = "push"
 )
 
 // IssuesEvent represents an issues event payload
