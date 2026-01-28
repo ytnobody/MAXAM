@@ -13,7 +13,7 @@ MAXAMは複数のAIエージェントが協調して開発業務を遂行する�
 | Rin Sato | フロントエンド + バックエンド |
 | Shiori Tanaka | テスト + ドキュメント |
 | Priya Sharma | レビュー + セキュリティ + QA |
-| Amara Okonkwo | 分析 |
+| Amara Okonkwo | 分析 + 法的基礎知識 |
 
 ## コーディング規約
 
