@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ytnobody/MAXAM/internal/config"
+	"github.com/ytnobody/MAXAM/internal/retry"
 )
 
 // Runner executes Claude Code with agent persona
@@ -76,24 +77,28 @@ func (r *Runner) Run(ctx context.Context, prompt string) (string, error) {
 		prompt,
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
-	defer cancel()
+	cfg := retry.DefaultConfig()
 
-	cmd := exec.CommandContext(ctx, "claude", args...)
-	cmd.Dir = r.WorkDir
+	return retry.DoWithResult(ctx, cfg, func() (string, error) {
+		runCtx, cancel := context.WithTimeout(ctx, r.Timeout)
+		defer cancel()
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+		cmd := exec.CommandContext(runCtx, "claude", args...)
+		cmd.Dir = r.WorkDir
 
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("timeout after %v", r.Timeout)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			if runCtx.Err() == context.DeadlineExceeded {
+				return "", fmt.Errorf("timeout after %v", r.Timeout)
+			}
+			return "", fmt.Errorf("run claude: %w\nstderr: %s", err, stderr.String())
 		}
-		return "", fmt.Errorf("run claude: %w\nstderr: %s", err, stderr.String())
-	}
 
-	return stdout.String(), nil
+		return stdout.String(), nil
+	})
 }
 
 // RunWithAllowedTools executes with specific tools enabled
@@ -116,24 +121,28 @@ func (r *Runner) RunWithAllowedTools(ctx context.Context, prompt string, tools [
 
 	args = append(args, prompt)
 
-	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
-	defer cancel()
+	cfg := retry.DefaultConfig()
 
-	cmd := exec.CommandContext(ctx, "claude", args...)
-	cmd.Dir = r.WorkDir
+	return retry.DoWithResult(ctx, cfg, func() (string, error) {
+		runCtx, cancel := context.WithTimeout(ctx, r.Timeout)
+		defer cancel()
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+		cmd := exec.CommandContext(runCtx, "claude", args...)
+		cmd.Dir = r.WorkDir
 
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("timeout after %v", r.Timeout)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			if runCtx.Err() == context.DeadlineExceeded {
+				return "", fmt.Errorf("timeout after %v", r.Timeout)
+			}
+			return "", fmt.Errorf("run claude: %w\nstderr: %s", err, stderr.String())
 		}
-		return "", fmt.Errorf("run claude: %w\nstderr: %s", err, stderr.String())
-	}
 
-	return stdout.String(), nil
+		return stdout.String(), nil
+	})
 }
 
 // Agents provides pre-configured runners for each team member
