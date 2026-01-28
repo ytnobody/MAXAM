@@ -167,7 +167,12 @@ func (m *Model) refreshTasks() {
 }
 
 // Refresh reloads tasks from the service (public method).
+// If the service supports Reloader interface, it reloads from file first.
 func (m *Model) Refresh() {
+	// Try to reload from file if service supports it
+	if reloader, ok := m.service.(taskboard.Reloader); ok {
+		reloader.Reload()
+	}
 	m.refreshTasks()
 }
 

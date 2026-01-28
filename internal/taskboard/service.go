@@ -19,3 +19,8 @@ type Service interface {
 	// Delete removes a task by ID
 	Delete(ctx context.Context, id int) error
 }
+
+// Reloader is an optional interface for services that support reloading from external source
+type Reloader interface {
+	Reload() error
+}
