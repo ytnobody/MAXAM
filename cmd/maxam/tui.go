@@ -195,6 +195,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logMgr.Close()
 			return m, tea.Quit
 
+		case tea.KeyCtrlL:
+			// 画面再描画（表示崩れのリカバリ用）
+			m.updateViewport()
+			return m, tea.ClearScreen
+
 		case tea.KeyTab:
 			// Toggle between chat and taskboard view
 			if m.currentView == viewChat {
@@ -593,7 +598,7 @@ func (m tuiModel) View() string {
 			helpStyle.Render("Tab:チャット | ↑↓:選択 Enter:ステータス変更 d:削除")
 	} else {
 		header = titleStyle.Render("MAXAM Team Chat") + "  " +
-			helpStyle.Render("Tab:タスクボード | Mei(default) @yuki @priya @amara | exit:終了 clear:リセット")
+			helpStyle.Render("Tab:タスクボード | Ctrl+L:再描画 | exit:終了 clear:リセット")
 	}
 
 	// Main content
