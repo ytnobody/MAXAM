@@ -17,6 +17,7 @@ import (
 	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/history"
 	"github.com/ytnobody/MAXAM/internal/logger"
+	"github.com/ytnobody/MAXAM/internal/mention"
 	"github.com/ytnobody/MAXAM/internal/taskboard"
 	"github.com/ytnobody/MAXAM/internal/tui/tasklist"
 )
@@ -71,6 +72,11 @@ var (
 	helpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241"))
 
+	// Warning style for mention leak detection
+	warningStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFD700")).
+			Bold(true)
+
 	statusStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
 			Background(lipgloss.Color("236")).
@@ -115,6 +121,9 @@ type tuiModel struct {
 
 	// File watcher
 	taskWatcher *fsnotify.Watcher
+
+	// Mention leak warning
+	mentionWarning string
 }
 
 type agentResponseMsg struct {
@@ -506,6 +515,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.textInput, tiCmd = m.textInput.Update(msg)
 	cmds = append(cmds, tiCmd)
 
+	// Check for mention leaks in real-time as user types
+	if m.currentView == viewChat {
+		input := m.textInput.Value()
+		result := mention.Check(input)
+		if result.NeedsWarning {
+			m.mentionWarning = mention.FormatWarning()
+		} else {
+			m.mentionWarning = ""
+		}
+	}
+
 	// Update viewport
 	var vpCmd tea.Cmd
 	m.viewport, vpCmd = m.viewport.Update(msg)
@@ -691,7 +711,13 @@ func (m tuiModel) View() string {
 		}
 
 		inputLine := "You: " + m.textInput.View()
-		footer = status + "\n" + inputLine
+
+		// Add mention warning if needed
+		if m.mentionWarning != "" {
+			footer = status + "\n" + warningStyle.Render("⚠️ "+m.mentionWarning) + "\n" + inputLine
+		} else {
+			footer = status + "\n" + inputLine
+		}
 	} else {
 		footer = statusStyle.Render(" Tab:チャットに戻る ")
 	}
