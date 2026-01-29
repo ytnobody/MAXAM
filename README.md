@@ -140,12 +140,12 @@ Yuki: 了解。GET /users 作る。DBスキーマはある？
 ```
 MAXAM/
 ├── cmd/
-│   ├── maxam/          # CLIツール
-│   └── orchestrator/   # チームチャット
+│   └── maxam/          # CLIツール（チームチャット）
 ├── internal/
 │   ├── agent/          # エージェント管理
-│   ├── workflow/       # ワークフロー
-│   └── logger/         # ログ
+│   ├── tui/            # ターミナルUI
+│   ├── task/           # タスク管理
+│   └── ...             # その他のパッケージ
 ├── agents/             # 各エージェントのCLAUDE.md
 │   ├── mei/
 │   ├── yuki/
