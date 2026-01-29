@@ -10,15 +10,16 @@ import (
 
 // PREvent represents a PR event (merge or close)
 type PREvent struct {
-	Number    int
-	Title     string
-	Author    string
-	Action    PRAction
-	MergedAt  *time.Time
-	ClosedAt  *time.Time
-	URL       string
-	MergedBy  string
-	CreatedAt time.Time
+	Number     int
+	Title      string
+	Author     string
+	Action     PRAction
+	MergedAt   *time.Time
+	ClosedAt   *time.Time
+	URL        string
+	MergedBy   string
+	CreatedAt  time.Time
+	HeadBranch string // source branch name (e.g., "feature/xxx")
 }
 
 // PRAction represents the type of PR event
@@ -102,11 +103,12 @@ func (w *Watcher) fetchPREvents(ctx context.Context, since time.Time) ([]PREvent
 		}
 
 		event := PREvent{
-			Number:    pr.GetNumber(),
-			Title:     pr.GetTitle(),
-			Author:    pr.GetUser().GetLogin(),
-			URL:       pr.GetHTMLURL(),
-			CreatedAt: pr.GetCreatedAt().Time,
+			Number:     pr.GetNumber(),
+			Title:      pr.GetTitle(),
+			Author:     pr.GetUser().GetLogin(),
+			URL:        pr.GetHTMLURL(),
+			CreatedAt:  pr.GetCreatedAt().Time,
+			HeadBranch: pr.GetHead().GetRef(),
 		}
 
 		if pr.MergedAt != nil {
