@@ -101,7 +101,7 @@ type: feat, fix, refactor, docs, test, chore
 
 | パス | 用途 |
 |------|------|
-| `/home/ubuntu/{project}/` | 元リポジトリ（main）、Meiの作業場所 |
+| `~/{project}/` | 元リポジトリ（main）、Meiの作業場所 |
 | `/tmp/maxam/yuki/{project}/` | Yuki用worktree |
 | `/tmp/maxam/priya/{project}/` | Priya用worktree |
 | `/tmp/maxam/amara/{project}/` | Amara用worktree |

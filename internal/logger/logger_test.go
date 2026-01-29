@@ -7,8 +7,8 @@ func TestProjectNameFromPath(t *testing.T) {
 		path     string
 		expected string
 	}{
-		{"/home/ubuntu/my-project", "home_ubuntu_my-project"},
-		{"/home/ubuntu/MAXAM", "home_ubuntu_MAXAM"},
+		{"/home/user/my-project", "home_user_my-project"},
+		{"/home/user/MAXAM", "home_user_MAXAM"},
 		{"/var/www/app", "var_www_app"},
 		{"/single", "single"},
 	}

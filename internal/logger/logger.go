@@ -22,7 +22,7 @@ func GetDefaultLogDir() string {
 }
 
 // ProjectNameFromPath converts a directory path to a project name.
-// Example: /home/ubuntu/my-project -> home_ubuntu_my-project
+// Example: /home/user/my-project -> home_user_my-project
 func ProjectNameFromPath(path string) string {
 	// Clean and get absolute path
 	cleaned := filepath.Clean(path)
