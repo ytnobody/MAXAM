@@ -15,11 +15,13 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
+	gh "github.com/ytnobody/MAXAM/internal/github"
 	"github.com/ytnobody/MAXAM/internal/history"
 	"github.com/ytnobody/MAXAM/internal/logger"
 	"github.com/ytnobody/MAXAM/internal/mention"
 	"github.com/ytnobody/MAXAM/internal/taskboard"
 	"github.com/ytnobody/MAXAM/internal/tui/tasklist"
+	"github.com/ytnobody/MAXAM/internal/worktree"
 )
 
 // Theme colors for each agent
@@ -124,6 +126,9 @@ type tuiModel struct {
 
 	// Mention leak warning
 	mentionWarning string
+
+	// PR watcher for worktree cleanup
+	prWatcher *gh.Watcher
 }
 
 type agentResponseMsg struct {
@@ -187,6 +192,12 @@ func initialTuiModel(workDir string) tuiModel {
 		}
 	}
 
+	// Setup PR watcher for worktree cleanup (silently fail if no GitHub access)
+	var prWatcher *gh.Watcher
+	if ghClient, err := gh.NewClient("ytnobody", "MAXAM"); err == nil {
+		prWatcher = gh.NewWatcher(ghClient)
+	}
+
 	return tuiModel{
 		agents:           agent.NewAgents(workDir),
 		logMgr:           logger.NewManager(logger.GetDefaultLogDir(), workDir),
@@ -201,18 +212,37 @@ func initialTuiModel(workDir string) tuiModel {
 		tasklist:         tasklistModel,
 		taskService:      taskService,
 		taskWatcher:      taskWatcher,
+		prWatcher:        prWatcher,
 	}
 }
 
 // taskFileChangedMsg is sent when the task file is modified externally
 type taskFileChangedMsg struct{}
 
+// prCheckTickMsg is sent periodically to check for merged PRs
+type prCheckTickMsg struct{}
+
+// prMergedMsg is sent when PRs are found to be merged
+type prMergedMsg struct {
+	branches []string
+}
+
 func (m tuiModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{textinput.Blink, tea.EnterAltScreen, m.tickAnalysis()}
 	if m.taskWatcher != nil {
 		cmds = append(cmds, m.watchTaskFile())
 	}
+	if m.prWatcher != nil {
+		cmds = append(cmds, m.tickPRCheck())
+	}
 	return tea.Batch(cmds...)
+}
+
+// tickPRCheck returns a command that triggers PR check every 5 minutes
+func (m tuiModel) tickPRCheck() tea.Cmd {
+	return tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
+		return prCheckTickMsg{}
+	})
 }
 
 // watchTaskFile watches for changes to the task file
@@ -459,6 +489,23 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 		}
 		return m, m.tickAnalysis()
+
+	case prCheckTickMsg:
+		// 5分ごとにPRマージをチェック
+		if m.prWatcher != nil {
+			return m, tea.Batch(
+				m.checkMergedPRs(),
+				m.tickPRCheck(),
+			)
+		}
+		return m, nil
+
+	case prMergedMsg:
+		// マージされたPRのブランチに対応するworktreeを削除（サイレント）
+		for _, branch := range msg.branches {
+			worktree.CleanupForBranch(m.workDir, branch)
+		}
+		return m, nil
 
 	case agentResponseMsg:
 		// エージェントの処理状態をクリア
@@ -983,6 +1030,36 @@ func getAgentStyle(name string) lipgloss.Style {
 		return shioriStyle
 	default:
 		return lipgloss.NewStyle()
+	}
+}
+
+// checkMergedPRs checks for recently merged PRs and returns their branches
+func (m *tuiModel) checkMergedPRs() tea.Cmd {
+	return func() tea.Msg {
+		if m.prWatcher == nil {
+			return nil
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		events, err := m.prWatcher.CheckEvents(ctx)
+		if err != nil {
+			return nil // silently ignore errors
+		}
+
+		var branches []string
+		for _, event := range events {
+			if event.Action == gh.PRActionMerged && event.HeadBranch != "" {
+				branches = append(branches, event.HeadBranch)
+			}
+		}
+
+		if len(branches) == 0 {
+			return nil
+		}
+
+		return prMergedMsg{branches: branches}
 	}
 }
 
