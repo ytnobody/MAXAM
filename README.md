@@ -6,6 +6,11 @@
 
 MAXAMは6人のAIエージェントが協調して開発業務を遂行するシステムです。
 
+![MAXAMチーム](image.png)
+
+*前列左から: Shiori Tanaka（田中 栞）、Mei Chen（メイ・チェン）、Yuki Tanaka（田中 雪）*
+*後列左から: Amara Okonkwo（アマラ・オコンクォ）、Rin Sato（佐藤 凛）、Priya Sharma（プリヤ・シャルマ）*
+
 | エージェント | 役割 | 特徴 |
 |------------|------|------|
 | **Mei Chen** | PM / 要件定義 | 面倒見の良いお姉さん、顧客対応が得意 |
