@@ -11,6 +11,9 @@ import (
 	"github.com/ytnobody/MAXAM/internal/logger"
 )
 
+// Threshold for determining if implementation is "lightweight"
+const lightweightThreshold = 100
+
 // ReviewCycle represents a Yuki -> Priya review cycle
 type ReviewCycle struct {
 	agents *agent.Agents
@@ -81,7 +84,14 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 		}
 
 		// Priya reviews
-		fmt.Println("[Priya] Reviewing...")
+		// Use Haiku for follow-up reviews (round > 1) with lightweight changes
+		reviewModel := selectReviewModel(i, impl)
+		modelInfo := ""
+		if reviewModel != agent.ModelDefault {
+			modelInfo = fmt.Sprintf(" (model: %s)", reviewModel)
+		}
+		fmt.Printf("[Priya] Reviewing...%s\n", modelInfo)
+
 		reviewPrompt := fmt.Sprintf(`以下の実装をレビューしてください。
 
 ## タスク
@@ -95,7 +105,12 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 - 問題があれば「[MINOR]」「[DESIGN]」「[REQUIREMENTS]」「[SEC-CRITICAL]」のいずれかのタグをつけて指摘してください`, task, impl)
 
 		start = time.Now()
-		review, err := priya.Run(ctx, reviewPrompt)
+		var review string
+		if reviewModel != agent.ModelDefault {
+			review, err = priya.RunWithModel(ctx, reviewPrompt, reviewModel)
+		} else {
+			review, err = priya.Run(ctx, reviewPrompt)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("priya review: %w", err)
 		}
@@ -158,4 +173,20 @@ func parseTags(review string) []string {
 	}
 
 	return tags
+}
+
+// selectReviewModel chooses model based on review round and implementation size
+// - Round 1: Always use default (full review)
+// - Round 2+: Use Haiku if implementation is lightweight
+func selectReviewModel(round int, impl string) agent.Model {
+	if round == 1 {
+		return agent.ModelDefault
+	}
+
+	lines := strings.Count(impl, "\n") + 1
+	if lines <= lightweightThreshold {
+		return agent.ModelHaiku
+	}
+
+	return agent.ModelDefault
 }
