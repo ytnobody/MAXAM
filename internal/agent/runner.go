@@ -20,6 +20,7 @@ type Runner struct {
 	WorkDir     string
 	ClaudeMDDir string
 	Timeout     time.Duration
+	Model       Model // Model to use for this agent
 }
 
 // NewRunner creates a new agent runner
@@ -74,8 +75,14 @@ func (r *Runner) Run(ctx context.Context, prompt string) (string, error) {
 		"--print",
 		"--system-prompt", systemPrompt,
 		"--permission-mode", "bypassPermissions",
-		prompt,
 	}
+
+	// Use agent's configured model if set
+	if r.Model != ModelDefault {
+		args = append(args, "--model", string(r.Model))
+	}
+
+	args = append(args, prompt)
 
 	cfg := retry.DefaultConfig()
 
@@ -236,7 +243,12 @@ func NewAgents(workDir string) *Agents {
 		agentDir := filepath.Join(agentsDir, name)
 		// Only add if CLAUDE.md exists
 		if _, err := os.Stat(filepath.Join(agentDir, "CLAUDE.md")); err == nil {
-			runners[name] = NewRunner(fullName, workDir, agentDir)
+			runner := NewRunner(fullName, workDir, agentDir)
+			// Set model from config if specified
+			if agentCfg.Model != "" {
+				runner.Model = Model(agentCfg.Model)
+			}
+			runners[name] = runner
 		}
 	}
 
