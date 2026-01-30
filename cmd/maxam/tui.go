@@ -499,8 +499,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		headerHeight := 3
-		footerHeight := 4
+		headerHeight := 2
+		footerHeight := 3
 		verticalMargin := headerHeight + footerHeight
 
 		if !m.ready {
