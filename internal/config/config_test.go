@@ -165,3 +165,43 @@ func TestListAgents(t *testing.T) {
 		t.Errorf("ListAgents() returned %d agents, want %d", len(list), len(DefaultAgents))
 	}
 }
+
+func TestAgentConfigModel(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   AgentConfig
+		hasModel bool
+	}{
+		{
+			name:     "モデル未指定",
+			config:   AgentConfig{Name: "test", FullName: "Test Agent", Role: "test"},
+			hasModel: false,
+		},
+		{
+			name:     "Sonnet指定",
+			config:   AgentConfig{Name: "test", FullName: "Test Agent", Role: "test", Model: "sonnet"},
+			hasModel: true,
+		},
+		{
+			name:     "Opus指定",
+			config:   AgentConfig{Name: "test", FullName: "Test Agent", Role: "test", Model: "opus"},
+			hasModel: true,
+		},
+		{
+			name:     "Haiku指定",
+			config:   AgentConfig{Name: "test", FullName: "Test Agent", Role: "test", Model: "haiku"},
+			hasModel: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.hasModel && tt.config.Model == "" {
+				t.Error("Expected model to be set")
+			}
+			if !tt.hasModel && tt.config.Model != "" {
+				t.Error("Expected model to be empty")
+			}
+		})
+	}
+}
