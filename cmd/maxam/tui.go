@@ -16,10 +16,12 @@ import (
 
 	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/ccusage"
+	"github.com/ytnobody/MAXAM/internal/config"
 	gh "github.com/ytnobody/MAXAM/internal/github"
 	"github.com/ytnobody/MAXAM/internal/history"
 	"github.com/ytnobody/MAXAM/internal/logger"
 	"github.com/ytnobody/MAXAM/internal/mention"
+	"github.com/ytnobody/MAXAM/internal/router"
 	"github.com/ytnobody/MAXAM/internal/taskboard"
 	"github.com/ytnobody/MAXAM/internal/tui/tasklist"
 	"github.com/ytnobody/MAXAM/internal/worktree"
@@ -107,6 +109,7 @@ const (
 
 type tuiModel struct {
 	agents         *agent.Agents
+	router         *router.Router
 	logMgr         *logger.Manager
 	history        *history.History
 	workDir        string
@@ -212,8 +215,23 @@ func initialTuiModel(workDir string) tuiModel {
 	// Setup ccusage client (silently disabled if not available)
 	ccClient := ccusage.NewClient()
 
+	// Setup agent router
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+	routerAgents := make([]router.AgentInfo, len(cfg.Agents))
+	for i, agentCfg := range cfg.Agents {
+		routerAgents[i] = router.AgentInfo{
+			Name: agentCfg.Name,
+			Role: agentCfg.Role,
+		}
+	}
+	agentRouter := router.New(routerAgents)
+
 	return tuiModel{
 		agents:           agent.NewAgents(workDir),
+		router:           agentRouter,
 		logMgr:           logger.NewManager(logger.GetDefaultLogDir(), workDir),
 		history:          hist,
 		workDir:          workDir,
@@ -852,12 +870,13 @@ func (m tuiModel) View() string {
 }
 
 // detectAgents は入力から対象エージェントを複数検出（並列呼び出し用）
+// メンションがあればバイパス、なければルーターで判定
 func (m *tuiModel) detectAgents(text string) []string {
 	lower := strings.ToLower(text)
 	var agents []string
 	seen := make(map[string]bool)
 
-	// 明示的なメンションを優先的にチェック
+	// 明示的なメンションを優先的にチェック（ルーターをバイパス）
 	if strings.Contains(lower, "@yuki") || strings.Contains(lower, "ゆきちゃん") {
 		agents = append(agents, "yuki")
 		seen["yuki"] = true
@@ -883,24 +902,44 @@ func (m *tuiModel) detectAgents(text string) []string {
 		seen["shiori"] = true
 	}
 
-	// 明示的なメンションがなければキーワードで判定（1人だけ）
-	if len(agents) == 0 {
-		if strings.Contains(lower, "ゆき") || strings.Contains(lower, "実装") || strings.Contains(lower, "コード書") {
-			return []string{"yuki"}
+	// 明示的なメンションがあればそれを返す（ルーターをバイパス）
+	if len(agents) > 0 {
+		return agents
+	}
+
+	// メンションがなければルーターで判定
+	return m.routeMessage(text)
+}
+
+// routeMessage はルーターを使ってメッセージの宛先を決定
+func (m *tuiModel) routeMessage(text string) []string {
+	// 会話履歴をルーター用のフォーマットに変換（直近4メッセージ）
+	var history []router.Message
+	start := 0
+	if len(m.messages) > 4 {
+		start = len(m.messages) - 4
+	}
+	for i := start; i < len(m.messages); i++ {
+		msg := m.messages[i]
+		role := msg.role
+		if role == "user" {
+			role = "オーナー"
+		} else {
+			role = getTuiFullName(role)
 		}
-		if strings.Contains(lower, "プリヤ") || strings.Contains(lower, "レビュー") || strings.Contains(lower, "チェック") {
-			return []string{"priya"}
-		}
-		if strings.Contains(lower, "アマラ") || strings.Contains(lower, "分析") || strings.Contains(lower, "傾向") {
-			return []string{"amara"}
-		}
-		if strings.Contains(lower, "りん") || strings.Contains(lower, "フロントエンド") || strings.Contains(lower, "ui") {
-			return []string{"rin"}
-		}
-		if strings.Contains(lower, "しおり") || strings.Contains(lower, "テスト") || strings.Contains(lower, "ドキュメント") {
-			return []string{"shiori"}
-		}
-		// デフォルトはMei
+		history = append(history, router.Message{
+			Role:    role,
+			Content: msg.content,
+		})
+	}
+
+	// ルーターで判定
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	agents, err := m.router.Route(ctx, text, history)
+	if err != nil || len(agents) == 0 {
+		// フォールバック: Mei
 		return []string{"mei"}
 	}
 
