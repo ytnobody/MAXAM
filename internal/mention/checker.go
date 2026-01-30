@@ -32,18 +32,48 @@ var requestPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`よろしく(お願い|ね|)`),
 }
 
-// メンションパターン
-var mentionPattern = regexp.MustCompile(`@(yuki|priya|amara|mei|rin|shiori|Yuki|Priya|Amara|Mei|Rin|Shiori)`)
+// Checker detects mention leaks in messages
+type Checker struct {
+	mentionPattern *regexp.Regexp
+}
+
+// NewChecker creates a Checker with the given agent names
+func NewChecker(agentNames []string) *Checker {
+	if len(agentNames) == 0 {
+		// fallback: allow any @mention
+		return &Checker{
+			mentionPattern: regexp.MustCompile(`@\w+`),
+		}
+	}
+
+	// Build pattern: @(name1|name2|Name1|Name2|...)
+	var parts []string
+	for _, name := range agentNames {
+		lower := strings.ToLower(name)
+		// Add both lowercase and title case
+		parts = append(parts, lower)
+		if len(lower) > 0 {
+			titled := strings.ToUpper(string(lower[0])) + lower[1:]
+			if titled != lower {
+				parts = append(parts, titled)
+			}
+		}
+	}
+
+	pattern := `@(` + strings.Join(parts, "|") + `)`
+	return &Checker{
+		mentionPattern: regexp.MustCompile(pattern),
+	}
+}
 
 // Check analyzes a message for mention leaks
-// Returns a Result indicating if the message needs a warning
-func Check(message string) Result {
+func (c *Checker) Check(message string) Result {
 	result := Result{
 		Patterns: make([]string, 0),
 	}
 
 	// メンションの検出
-	result.HasMention = mentionPattern.MatchString(message)
+	result.HasMention = c.mentionPattern.MatchString(message)
 
 	// 依頼パターンの検出
 	lower := strings.ToLower(message)
@@ -63,6 +93,24 @@ func Check(message string) Result {
 	result.NeedsWarning = result.HasRequestPattern && !result.HasMention
 
 	return result
+}
+
+// defaultChecker is used by the package-level Check function
+var defaultChecker *Checker
+
+// SetDefaultChecker sets the default checker for package-level Check function
+func SetDefaultChecker(c *Checker) {
+	defaultChecker = c
+}
+
+// Check analyzes a message for mention leaks using the default checker
+// For backward compatibility
+func Check(message string) Result {
+	if defaultChecker == nil {
+		// fallback to hardcoded names for backward compatibility
+		defaultChecker = NewChecker([]string{"mei", "yuki", "rin", "shiori", "priya", "amara"})
+	}
+	return defaultChecker.Check(message)
 }
 
 // FormatWarning returns a warning message for display

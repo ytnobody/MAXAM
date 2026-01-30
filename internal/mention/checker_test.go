@@ -177,3 +177,69 @@ func TestFormatWarning(t *testing.T) {
 		t.Error("FormatWarning() returned empty string")
 	}
 }
+
+func TestNewChecker(t *testing.T) {
+	tests := []struct {
+		name       string
+		agentNames []string
+		message    string
+		wantMention bool
+	}{
+		{
+			name:        "custom agents - match",
+			agentNames:  []string{"alice", "bob"},
+			message:     "@alice お願い",
+			wantMention: true,
+		},
+		{
+			name:        "custom agents - no match",
+			agentNames:  []string{"alice", "bob"},
+			message:     "@yuki お願い",
+			wantMention: false,
+		},
+		{
+			name:        "custom agents - title case",
+			agentNames:  []string{"alice"},
+			message:     "@Alice お願い",
+			wantMention: true,
+		},
+		{
+			name:        "empty agents - any mention matches",
+			agentNames:  []string{},
+			message:     "@anyone お願い",
+			wantMention: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checker := NewChecker(tt.agentNames)
+			result := checker.Check(tt.message)
+			if result.HasMention != tt.wantMention {
+				t.Errorf("NewChecker(%v).Check(%q).HasMention = %v, want %v",
+					tt.agentNames, tt.message, result.HasMention, tt.wantMention)
+			}
+		})
+	}
+}
+
+func TestSetDefaultChecker(t *testing.T) {
+	// Save original
+	original := defaultChecker
+	defer func() { defaultChecker = original }()
+
+	// Set custom checker
+	customChecker := NewChecker([]string{"custom"})
+	SetDefaultChecker(customChecker)
+
+	// Verify it's used
+	result := Check("@custom お願い")
+	if !result.HasMention {
+		t.Error("SetDefaultChecker did not affect package-level Check")
+	}
+
+	result = Check("@yuki お願い")
+	if result.HasMention {
+		t.Error("Custom checker should not match @yuki")
+	}
+}
