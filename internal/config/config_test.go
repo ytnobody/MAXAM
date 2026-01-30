@@ -14,6 +14,47 @@ func TestDefaultConfig(t *testing.T) {
 	if len(cfg.Agents) != 6 {
 		t.Errorf("Agents count = %d, want 6", len(cfg.Agents))
 	}
+	if cfg.AnalysisMinMessages != DefaultAnalysisMinMessages {
+		t.Errorf("AnalysisMinMessages = %d, want %d", cfg.AnalysisMinMessages, DefaultAnalysisMinMessages)
+	}
+}
+
+func TestGetAnalysisMinMessages(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		expected int
+	}{
+		{
+			name:     "デフォルト設定",
+			cfg:      DefaultConfig(),
+			expected: DefaultAnalysisMinMessages,
+		},
+		{
+			name:     "カスタム値",
+			cfg:      &Config{AnalysisMinMessages: 20},
+			expected: 20,
+		},
+		{
+			name:     "0の場合はデフォルト",
+			cfg:      &Config{AnalysisMinMessages: 0},
+			expected: DefaultAnalysisMinMessages,
+		},
+		{
+			name:     "負の値の場合はデフォルト",
+			cfg:      &Config{AnalysisMinMessages: -5},
+			expected: DefaultAnalysisMinMessages,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.GetAnalysisMinMessages()
+			if got != tt.expected {
+				t.Errorf("GetAnalysisMinMessages() = %d, want %d", got, tt.expected)
+			}
+		})
+	}
 }
 
 func TestConfigDir(t *testing.T) {

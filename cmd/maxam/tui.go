@@ -146,6 +146,9 @@ type tuiModel struct {
 
 	// Token optimization
 	projectContextSent bool // projectContextを送信済みかどうか
+
+	// Analysis settings
+	analysisMinMessages int // 分析実行の最小メッセージ数
 }
 
 type agentResponseMsg struct {
@@ -238,22 +241,23 @@ func initialTuiModel(workDir string) tuiModel {
 	mention.SetDefaultChecker(mention.NewChecker(agentNames))
 
 	return tuiModel{
-		agents:           agent.NewAgents(workDir),
-		router:           agentRouter,
-		logMgr:           logger.NewManager(logger.GetDefaultLogDir(), workDir),
-		history:          hist,
-		workDir:          workDir,
-		textInput:        ti,
-		messages:         messages,
-		inputHist:        make([]string, 0),
-		processingAgents: make(map[string]bool),
-		histIdx:          -1,
-		currentView:      viewChat,
-		tasklist:         tasklistModel,
-		taskService:      taskService,
-		taskWatcher:      taskWatcher,
-		prWatcher:        prWatcher,
-		ccusageClient:    ccClient,
+		agents:              agent.NewAgents(workDir),
+		router:              agentRouter,
+		logMgr:              logger.NewManager(logger.GetDefaultLogDir(), workDir),
+		history:             hist,
+		workDir:             workDir,
+		textInput:           ti,
+		messages:            messages,
+		inputHist:           make([]string, 0),
+		processingAgents:    make(map[string]bool),
+		histIdx:             -1,
+		currentView:         viewChat,
+		tasklist:            tasklistModel,
+		taskService:         taskService,
+		taskWatcher:         taskWatcher,
+		prWatcher:           prWatcher,
+		ccusageClient:       ccClient,
+		analysisMinMessages: cfg.GetAnalysisMinMessages(),
 	}
 }
 
@@ -555,8 +559,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case analysisTickMsg:
 		// 1時間ごとの軽量分析トリガー
-		// Amaraが処理中でなく、会話がある場合のみ実行
-		if !m.processingAgents["amara"] && len(m.messages) > 0 {
+		// Amaraが処理中でなく、直近のメッセージ数が閾値以上の場合のみ実行
+		recentMessages := m.getRecentMessages(time.Hour)
+		if !m.processingAgents["amara"] && len(recentMessages) >= m.analysisMinMessages {
 			m.processingAgents["amara"] = true
 			return m, tea.Batch(
 				m.runLightweightAnalysis(),
@@ -1188,16 +1193,8 @@ func (m *tuiModel) checkMergedPRs() tea.Cmd {
 // runLightweightAnalysis は1時間ごとの軽量分析を実行
 func (m *tuiModel) runLightweightAnalysis() tea.Cmd {
 	return func() tea.Msg {
-		// 直近1時間のメッセージを取得
+		// 直近1時間のメッセージを取得（閾値チェックは呼び出し元で実施済み）
 		recentMessages := m.getRecentMessages(time.Hour)
-		if len(recentMessages) == 0 {
-			// 分析対象がなければ何もしない
-			return agentResponseMsg{
-				agent:   "amara",
-				content: "", // 空なら表示しない
-				err:     nil,
-			}
-		}
 
 		// 軽量分析用プロンプトを構築
 		prompt := m.buildLightweightAnalysisPrompt(recentMessages)

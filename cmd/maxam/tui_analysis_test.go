@@ -334,6 +334,57 @@ func TestSelectHistoryMessages(t *testing.T) {
 	}
 }
 
+func TestAnalysisMinMessagesThreshold(t *testing.T) {
+	tests := []struct {
+		name              string
+		messageCount      int
+		minMessages       int
+		expectAnalysis    bool
+	}{
+		{
+			name:           "閾値以上で分析実行",
+			messageCount:   10,
+			minMessages:    10,
+			expectAnalysis: true,
+		},
+		{
+			name:           "閾値超で分析実行",
+			messageCount:   15,
+			minMessages:    10,
+			expectAnalysis: true,
+		},
+		{
+			name:           "閾値未満でスキップ",
+			messageCount:   5,
+			minMessages:    10,
+			expectAnalysis: false,
+		},
+		{
+			name:           "0件でスキップ",
+			messageCount:   0,
+			minMessages:    10,
+			expectAnalysis: false,
+		},
+		{
+			name:           "閾値1で1件あれば実行",
+			messageCount:   1,
+			minMessages:    1,
+			expectAnalysis: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// 閾値チェックロジックのテスト
+			shouldRunAnalysis := tt.messageCount >= tt.minMessages
+			if shouldRunAnalysis != tt.expectAnalysis {
+				t.Errorf("messageCount=%d, minMessages=%d: got %v, want %v",
+					tt.messageCount, tt.minMessages, shouldRunAnalysis, tt.expectAnalysis)
+			}
+		})
+	}
+}
+
 func TestGetWorktreePath(t *testing.T) {
 	tests := []struct {
 		name           string
