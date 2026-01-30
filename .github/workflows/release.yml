@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build for all platforms
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          PLATFORMS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64"
+
+          mkdir -p dist
+
+          for platform in $PLATFORMS; do
+            GOOS=${platform%/*}
+            GOARCH=${platform#*/}
+            PKG_NAME="maxam-${VERSION}-${GOOS}-${GOARCH}"
+
+            echo "Building ${PKG_NAME}..."
+            mkdir -p "dist/${PKG_NAME}"
+
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w" -o "dist/${PKG_NAME}/maxam" ./cmd/maxam
+
+            cp CLAUDE.md "dist/${PKG_NAME}/"
+            cp -r agents "dist/${PKG_NAME}/"
+
+            cd dist
+            zip -r "${PKG_NAME}.zip" "${PKG_NAME}"
+            rm -rf "${PKG_NAME}"
+            cd ..
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
