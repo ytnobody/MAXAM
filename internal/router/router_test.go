@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestParseResult(t *testing.T) {
+func TestRoute(t *testing.T) {
 	agents := []AgentInfo{
 		{Name: "mei", Role: "PM"},
 		{Name: "yuki", Role: "Backend"},
@@ -13,58 +13,92 @@ func TestParseResult(t *testing.T) {
 		{Name: "rin", Role: "Frontend"},
 		{Name: "shiori", Role: "Test/Docs"},
 	}
-	r := New(agents)
 
 	tests := []struct {
-		name     string
-		input    string
-		expected []string
+		name         string
+		message      string
+		defaultAgent string
+		expected     []string
 	}{
 		{
-			name:     "valid JSON",
-			input:    `{"agents": ["yuki"]}`,
-			expected: []string{"yuki"},
+			name:         "single mention",
+			message:      "@yuki 実装お願い",
+			defaultAgent: "mei",
+			expected:     []string{"yuki"},
 		},
 		{
-			name:     "multiple agents",
-			input:    `{"agents": ["yuki", "priya"]}`,
-			expected: []string{"yuki", "priya"},
+			name:         "multiple mentions",
+			message:      "@yuki と @priya に確認お願い",
+			defaultAgent: "mei",
+			expected:     []string{"yuki", "priya"},
 		},
 		{
-			name:     "JSON with extra text",
-			input:    `Here is the result: {"agents": ["amara"]} That's all.`,
-			expected: []string{"amara"},
+			name:         "case insensitive",
+			message:      "@YUKI 実装して",
+			defaultAgent: "mei",
+			expected:     []string{"yuki"},
 		},
 		{
-			name:     "fallback to name detection",
-			input:    `I think Yuki should handle this.`,
-			expected: []string{"yuki"},
+			name:         "invalid mention ignored",
+			message:      "@unknown この人いない",
+			defaultAgent: "mei",
+			expected:     []string{"mei"},
 		},
 		{
-			name:     "multiple names in text",
-			input:    `Both Yuki and Priya should review this.`,
-			expected: []string{"yuki", "priya"},
+			name:         "no mention - use default",
+			message:      "こんにちは",
+			defaultAgent: "mei",
+			expected:     []string{"mei"},
 		},
 		{
-			name:     "invalid agent name filtered",
-			input:    `{"agents": ["yuki", "unknown"]}`,
-			expected: []string{"yuki"},
+			name:         "no mention - custom default",
+			message:      "レビューお願い",
+			defaultAgent: "priya",
+			expected:     []string{"priya"},
 		},
 		{
-			name:     "empty result",
-			input:    `{}`,
-			expected: []string{},
+			name:         "mention at end",
+			message:      "実装お願い @yuki",
+			defaultAgent: "mei",
+			expected:     []string{"yuki"},
 		},
 		{
-			name:     "rin and shiori",
-			input:    `{"agents": ["rin", "shiori"]}`,
-			expected: []string{"rin", "shiori"},
+			name:         "mention in middle",
+			message:      "ちょっと @priya さんに聞きたい",
+			defaultAgent: "mei",
+			expected:     []string{"priya"},
+		},
+		{
+			name:         "duplicate mentions",
+			message:      "@yuki @yuki 二回書いた",
+			defaultAgent: "mei",
+			expected:     []string{"yuki"},
+		},
+		{
+			name:         "all agents mentioned",
+			message:      "@mei @yuki @priya @amara @rin @shiori 全員集合",
+			defaultAgent: "mei",
+			expected:     []string{"mei", "yuki", "priya", "amara", "rin", "shiori"},
+		},
+		{
+			name:         "mixed valid and invalid",
+			message:      "@yuki @invalid @priya お願い",
+			defaultAgent: "mei",
+			expected:     []string{"yuki", "priya"},
+		},
+		{
+			name:         "empty default fallback to mei",
+			message:      "誰かお願い",
+			defaultAgent: "",
+			expected:     []string{"mei"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := r.parseResult(tt.input)
+			r := New(agents, tt.defaultAgent)
+			result := r.Route(tt.message)
+
 			if len(result) != len(tt.expected) {
 				t.Errorf("expected %v, got %v", tt.expected, result)
 				return
@@ -79,43 +113,43 @@ func TestParseResult(t *testing.T) {
 	}
 }
 
-func TestValidateAgents(t *testing.T) {
+func TestExtractMentions(t *testing.T) {
 	agents := []AgentInfo{
 		{Name: "mei", Role: "PM"},
 		{Name: "yuki", Role: "Backend"},
 	}
-	r := New(agents)
+	r := New(agents, "mei")
 
 	tests := []struct {
 		name     string
-		input    []string
+		input    string
 		expected []string
 	}{
 		{
-			name:     "valid agents",
-			input:    []string{"mei", "yuki"},
-			expected: []string{"mei", "yuki"},
+			name:     "no mentions",
+			input:    "普通のメッセージ",
+			expected: nil,
 		},
 		{
-			name:     "filter invalid",
-			input:    []string{"mei", "invalid", "yuki"},
-			expected: []string{"mei", "yuki"},
+			name:     "one mention",
+			input:    "@yuki",
+			expected: []string{"yuki"},
 		},
 		{
-			name:     "remove duplicates",
-			input:    []string{"mei", "mei", "yuki"},
-			expected: []string{"mei", "yuki"},
+			name:     "mention with text",
+			input:    "Hello @mei how are you",
+			expected: []string{"mei"},
 		},
 		{
-			name:     "case insensitive",
-			input:    []string{"MEI", "Yuki"},
-			expected: []string{"mei", "yuki"},
+			name:     "invalid mention only",
+			input:    "@unknown",
+			expected: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := r.validateAgents(tt.input)
+			result := r.extractMentions(tt.input)
 			if len(result) != len(tt.expected) {
 				t.Errorf("expected %v, got %v", tt.expected, result)
 				return
@@ -130,63 +164,24 @@ func TestValidateAgents(t *testing.T) {
 	}
 }
 
-func TestBuildPrompt(t *testing.T) {
+func TestGetValidNames(t *testing.T) {
 	agents := []AgentInfo{
-		{Name: "mei", Role: "PM / 要件定義"},
-		{Name: "yuki", Role: "バックエンド / インフラ"},
+		{Name: "Mei", Role: "PM"},
+		{Name: "YUKI", Role: "Backend"},
 	}
-	r := New(agents)
+	r := New(agents, "mei")
 
-	history := []Message{
-		{Role: "user", Content: "Hello"},
-		{Role: "mei", Content: "Hi!"},
-	}
+	names := r.getValidNames()
+	expected := []string{"mei", "yuki"}
 
-	prompt := r.buildPrompt("Test message", history)
-
-	// Check prompt contains required sections
-	if !contains(prompt, "mei") {
-		t.Error("prompt should contain agent mei")
+	if len(names) != len(expected) {
+		t.Errorf("expected %v, got %v", expected, names)
+		return
 	}
-	if !contains(prompt, "yuki") {
-		t.Error("prompt should contain agent yuki")
-	}
-	if !contains(prompt, "Test message") {
-		t.Error("prompt should contain the message")
-	}
-	if !contains(prompt, "Hello") {
-		t.Error("prompt should contain history")
-	}
-}
-
-func TestTruncate(t *testing.T) {
-	tests := []struct {
-		input    string
-		maxLen   int
-		expected string
-	}{
-		{"short", 10, "short"},
-		{"this is a long string", 10, "this is a ..."},
-		{"exact", 5, "exact"},
-	}
-
-	for _, tt := range tests {
-		result := truncate(tt.input, tt.maxLen)
-		if result != tt.expected {
-			t.Errorf("truncate(%q, %d) = %q, want %q", tt.input, tt.maxLen, result, tt.expected)
+	for i, name := range names {
+		if name != expected[i] {
+			t.Errorf("expected %v, got %v", expected, names)
+			return
 		}
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
-}
-
-func containsHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

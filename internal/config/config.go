@@ -11,8 +11,9 @@ import (
 
 // Config represents the MAXAM configuration
 type Config struct {
-	Version string        `yaml:"version"`
-	Agents  []AgentConfig `yaml:"agents"`
+	Version      string        `yaml:"version"`
+	DefaultAgent string        `yaml:"default_agent,omitempty"`
+	Agents       []AgentConfig `yaml:"agents"`
 }
 
 // AgentConfig represents an agent configuration
@@ -25,7 +26,8 @@ type AgentConfig struct {
 // DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		Version: "1",
+		Version:      "1",
+		DefaultAgent: "mei",
 		Agents: []AgentConfig{
 			{Name: "mei", FullName: "Mei Chen", Role: "PM / 要件定義"},
 			{Name: "yuki", FullName: "Yuki Tanaka", Role: "バックエンド / インフラ"},
