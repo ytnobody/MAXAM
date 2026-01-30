@@ -143,6 +143,9 @@ type tuiModel struct {
 	// ccusage integration
 	ccusageClient *ccusage.Client
 	todayCost     float64
+
+	// Token optimization
+	projectContextSent bool // projectContextを送信済みかどうか
 }
 
 type agentResponseMsg struct {
@@ -611,6 +614,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			content: msg.content,
 		})
 
+		// projectContextを初回送信済みとしてマーク
+		m.projectContextSent = true
+
 		// Save to persistent history
 		if m.history != nil {
 			m.history.Add(msg.agent, msg.content)
@@ -721,11 +727,8 @@ func (m *tuiModel) buildMeiInterventionPrompt() string {
 	sb.WriteString("短く、わかりやすくまとめてください。\n")
 	sb.WriteString("オーナーへの確認は必ず含めてください。\n\n")
 
-	// Add project context
-	if m.projectContext != "" {
-		sb.WriteString(m.projectContext)
-		sb.WriteString("\n")
-	}
+	// Add project context (Mei介入時は要約のみ)
+	sb.WriteString(fmt.Sprintf("## プロジェクト情報\n\n作業ディレクトリ: %s\n\n", m.workDir))
 
 	sb.WriteString("## これまでの会話\n\n")
 	for _, msg := range m.messages {
@@ -977,20 +980,22 @@ func (m *tuiModel) buildPrompt(agentName, input string) string {
 	sb.WriteString("- 他のメンバーに作業を依頼するときは「@名前」で呼びかけてください\n")
 	sb.WriteString("- 呼びかけられたら、その依頼に応答してください\n\n")
 
-	// Add project context
+	// Add project context (初回のみフル、以降は要約)
 	if m.projectContext != "" {
-		sb.WriteString(m.projectContext)
-		sb.WriteString("\n")
+		if !m.projectContextSent {
+			sb.WriteString(m.projectContext)
+			sb.WriteString("\n")
+		} else {
+			// 要約版を渡す
+			sb.WriteString(fmt.Sprintf("## プロジェクト情報\n\n作業ディレクトリ: %s\n\n", m.workDir))
+		}
 	}
 
 	if len(m.messages) > 0 {
 		sb.WriteString("## 会話履歴\n\n")
-		start := 0
-		if len(m.messages) > 15 {
-			start = len(m.messages) - 15
-		}
-		for i := start; i < len(m.messages); i++ {
-			msg := m.messages[i]
+		// 動的に履歴数を調整（長いメッセージが多ければ少なく）
+		historyMessages := m.selectHistoryMessages()
+		for _, msg := range historyMessages {
 			if msg.role == "user" {
 				sb.WriteString(fmt.Sprintf("オーナー: %s\n\n", msg.content))
 			} else {
@@ -1013,6 +1018,75 @@ func (m *tuiModel) buildPrompt(agentName, input string) string {
 	}
 
 	return sb.String()
+}
+
+// selectHistoryMessages は履歴メッセージを動的に選択
+// メッセージ長に応じて数を調整し、雑談は除外
+func (m *tuiModel) selectHistoryMessages() []tuiMessage {
+	if len(m.messages) == 0 {
+		return nil
+	}
+
+	// 基本は8件、メッセージ長によって調整
+	baseCount := 8
+	totalChars := 0
+	const maxChars = 8000 // 目安の上限
+
+	var selected []tuiMessage
+	start := len(m.messages) - 1
+
+	for i := start; i >= 0 && len(selected) < baseCount; i-- {
+		msg := m.messages[i]
+
+		// 雑談フィルタ（重要度判定）
+		if isLowPriorityMessage(msg.content) {
+			continue
+		}
+
+		msgLen := len(msg.content)
+		// 文字数上限に達したら早めに切り上げ
+		if totalChars+msgLen > maxChars && len(selected) >= 4 {
+			break
+		}
+
+		// 先頭に追加（時系列を維持）
+		selected = append([]tuiMessage{msg}, selected...)
+		totalChars += msgLen
+	}
+
+	return selected
+}
+
+// isLowPriorityMessage は雑談や低重要度メッセージを判定
+func isLowPriorityMessage(content string) bool {
+	lower := strings.ToLower(content)
+
+	// 雑談パターン
+	chatPatterns := []string{
+		"好きな食べ物",
+		"パンケーキ",
+		"おはよう",
+		"こんにちは",
+		"こんばんは",
+		"ありがとう",
+		"お疲れ様",
+		"good morning",
+		"hello",
+		"thanks",
+	}
+
+	for _, pattern := range chatPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+
+	// 短すぎるメッセージ（10文字以下）も低優先
+	if len(content) <= 10 {
+		return true
+	}
+
+	return false
 }
 
 func (m *tuiModel) analyzeProject() {
