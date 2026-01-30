@@ -27,6 +27,9 @@ import (
 	"github.com/ytnobody/MAXAM/internal/worktree"
 )
 
+// Version is set by ldflags at build time
+var Version = "dev"
+
 // Theme colors for each agent
 // Mei: Cherry Blossom Pink - 優しいお姉さんのイメージ
 // Yuki: Ice Blue - クールな職人肌
@@ -842,11 +845,11 @@ func (m tuiModel) View() string {
 		yoloIndicator = " " + yoloStyle.Render("YOLO")
 	}
 	if m.currentView == viewTaskboard {
-		headerContent = titleStyle.Render("MAXAM Task Board") + yoloIndicator + "  " +
-			helpStyle.Render("Tab:チャット | ↑↓:選択 Enter:ステータス変更 d:削除")
+		headerContent = titleStyle.Render("MAXAM "+Version) + yoloIndicator + "  " +
+			helpStyle.Render("Task Board | Tab:チャット | ↑↓:選択 Enter:ステータス変更 d:削除")
 	} else {
-		headerContent = titleStyle.Render("MAXAM Team Chat") + yoloIndicator + "  " +
-			helpStyle.Render("Tab:タスクボード | Ctrl+Y:YOLO | Ctrl+L:再描画")
+		headerContent = titleStyle.Render("MAXAM "+Version) + yoloIndicator + "  " +
+			helpStyle.Render("Team Chat | Tab:タスクボード | Ctrl+Y:YOLO | Ctrl+L:再描画")
 	}
 	// 行全体に背景色を適用（幅いっぱいにパディング）
 	header := headerStyle.Width(m.width).Render(headerContent)
