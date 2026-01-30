@@ -104,6 +104,42 @@ make build
 - **プロジェクト自動分析**: 起動時にカレントディレクトリを分析し、README.md等の情報をエージェントと共有
 - **カラー表示**: 各エージェントが異なる色で表示
 - **入力履歴**: 過去の入力を↑↓キーで再利用可能
+- **コンテキストモード**: トークン消費を抑えるsummaryモード対応
+
+### 設定ファイル
+
+`~/.maxam/config.yaml` で動作をカスタマイズできます：
+
+```yaml
+# コンテキストモード: full（デフォルト）または summary
+# summaryモードはCLAUDE.summary.mdを使用し、トークン消費を約80%削減
+context_mode: summary
+
+# エージェントごとのモデル指定（省略時はデフォルトモデル）
+agents:
+  - name: mei
+    model: sonnet
+  - name: yuki
+    model: sonnet
+  - name: priya
+    model: haiku  # レビューサイクルはhaiku推奨
+  - name: amara
+    model: sonnet
+```
+
+| 設定項目 | 値 | 説明 |
+|---------|-----|------|
+| `context_mode` | `full` / `summary` | エージェントに渡すコンテキストの量 |
+| `agents[].model` | `sonnet` / `haiku` / `opus` | エージェントごとに使用するモデル |
+
+**context_modeの選び方:**
+- `full`: フルコンテキストが必要な複雑な作業向け
+- `summary`: 日常的な作業でコスト削減したい場合（`CLAUDE.summary.md`が必要）
+
+**モデル選択のヒント:**
+- `sonnet`: バランス型、通常の実装・分析向け
+- `haiku`: 高速・低コスト、レビュー・軽量タスク向け
+- `opus`: 複雑な判断が必要な場合
 
 ### CLIコマンド
 
