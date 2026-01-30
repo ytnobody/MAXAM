@@ -377,6 +377,42 @@ go test ./...
 - 引数追加時は既存テストも漏れなく更新
 - オプショナル機能は「空なら何もしない」パターンで安全に実装
 
+#### コンテキストモード切り替え機能（PR #82より）
+
+**変更規模:** 5ファイル、+285/-3行、テスト9ケース追加
+
+**設計パターン:**
+1. **型安全な設定** - `ContextMode`型を定義（`full`/`summary`）、マジックストリングを排除
+2. **グレースフルフォールバック** - `CLAUDE.summary.md`がない場合は自動的に`CLAUDE.md`を使用
+3. **多段階のコンテキスト読み込み** - プロジェクト用とエージェント用、両方にフォールバックを適用
+
+**トークン削減効果:**
+- `CLAUDE.summary.md`: 81行（元の`CLAUDE.md` 400行から約80%削減）
+- 要約版は「チームが知っておくべき最小限」に絞り込み
+
+**実装の好例:**
+```go
+// フォールバックパターン
+if data, err := os.ReadFile(sharedPath); err == nil {
+    parts = append(parts, string(data))
+} else if r.ContextMode == config.ContextModeSummary {
+    // Fallback to full version if summary not found
+    sharedPath = filepath.Join(r.WorkDir, "CLAUDE.md")
+    // ...
+}
+```
+
+**使い方:**
+```yaml
+# ~/.maxam/config.yaml
+context_mode: summary  # or "full"（デフォルト）
+```
+
+**チーム連携:**
+- コンフリクト発生 → Priyaが即座に検知してYukiに差し戻し → 解消後レビュー
+- 差し戻し1回（コンフリクト起因）、コード品質の差し戻しはゼロ
+- チームの練度向上を継続的に確認
+
 ---
 
 *このファイルはチームの学習により継続的に更新される*
