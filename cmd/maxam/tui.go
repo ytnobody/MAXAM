@@ -92,6 +92,13 @@ var (
 	// フッター行全体の背景色（控えめなダークグレー）
 	footerStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("236"))
+
+	// YOLO mode indicator style
+	yoloStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FF0000")).
+			Background(lipgloss.Color("#FFFF00")).
+			Bold(true).
+			Padding(0, 1)
 )
 
 type tuiMessage struct {
@@ -149,6 +156,9 @@ type tuiModel struct {
 
 	// Analysis settings
 	analysisMinMessages int // 分析実行の最小メッセージ数
+
+	// YOLO mode - skip confirmations and auto-approve
+	yoloMode bool
 }
 
 type agentResponseMsg struct {
@@ -258,6 +268,7 @@ func initialTuiModel(workDir string) tuiModel {
 		prWatcher:           prWatcher,
 		ccusageClient:       ccClient,
 		analysisMinMessages: cfg.GetAnalysisMinMessages(),
+		yoloMode:            cfg.YOLOMode,
 	}
 }
 
@@ -369,6 +380,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// 画面再描画（表示崩れのリカバリ用）
 			m.updateViewport()
 			return m, tea.ClearScreen
+
+		case tea.KeyCtrlY:
+			// Toggle YOLO mode
+			m.yoloMode = !m.yoloMode
+			return m, nil
 
 		case tea.KeyTab:
 			// Toggle between chat and taskboard view
@@ -821,12 +837,16 @@ func (m tuiModel) View() string {
 
 	// Header - ビューに応じてタイトルを切り替え（行全体に背景色）
 	var headerContent string
+	var yoloIndicator string
+	if m.yoloMode {
+		yoloIndicator = " " + yoloStyle.Render("YOLO")
+	}
 	if m.currentView == viewTaskboard {
-		headerContent = titleStyle.Render("MAXAM Task Board") + "  " +
+		headerContent = titleStyle.Render("MAXAM Task Board") + yoloIndicator + "  " +
 			helpStyle.Render("Tab:チャット | ↑↓:選択 Enter:ステータス変更 d:削除")
 	} else {
-		headerContent = titleStyle.Render("MAXAM Team Chat") + "  " +
-			helpStyle.Render("Tab:タスクボード | Ctrl+L:再描画 | exit:終了 clear:リセット")
+		headerContent = titleStyle.Render("MAXAM Team Chat") + yoloIndicator + "  " +
+			helpStyle.Render("Tab:タスクボード | Ctrl+Y:YOLO | Ctrl+L:再描画")
 	}
 	// 行全体に背景色を適用（幅いっぱいにパディング）
 	header := headerStyle.Width(m.width).Render(headerContent)

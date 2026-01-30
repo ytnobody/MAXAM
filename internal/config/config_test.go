@@ -271,3 +271,35 @@ func TestAgentConfigModel(t *testing.T) {
 		})
 	}
 }
+
+func TestYOLOMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		expected bool
+	}{
+		{
+			name:     "デフォルトはfalse",
+			cfg:      &Config{},
+			expected: false,
+		},
+		{
+			name:     "明示的にtrue",
+			cfg:      &Config{YOLOMode: true},
+			expected: true,
+		},
+		{
+			name:     "明示的にfalse",
+			cfg:      &Config{YOLOMode: false},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.cfg.YOLOMode != tt.expected {
+				t.Errorf("YOLOMode = %v, want %v", tt.cfg.YOLOMode, tt.expected)
+			}
+		})
+	}
+}
