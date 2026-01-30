@@ -220,6 +220,120 @@ func TestDetectAgentMentions(t *testing.T) {
 	}
 }
 
+func TestIsLowPriorityMessage(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name:    "雑談: 好きな食べ物",
+			content: "好きな食べ物は何？",
+			want:    true,
+		},
+		{
+			name:    "雑談: パンケーキ",
+			content: "パンケーキ食べたい！",
+			want:    true,
+		},
+		{
+			name:    "雑談: おはよう",
+			content: "おはよう！",
+			want:    true,
+		},
+		{
+			name:    "雑談: ありがとう",
+			content: "ありがとう！",
+			want:    true,
+		},
+		{
+			name:    "短いメッセージ (10文字以下)",
+			content: "うん",
+			want:    true,
+		},
+		{
+			name:    "短いメッセージ2 (10文字以下)",
+			content: "できた",
+			want:    true,
+		},
+		{
+			name:    "技術的な内容",
+			content: "buildPrompt関数でメッセージ履歴を動的に調整する実装を追加しました",
+			want:    false,
+		},
+		{
+			name:    "作業指示",
+			content: "@Yuki これ実装してほしい。15→8に減らして",
+			want:    false,
+		},
+		{
+			name:    "レビュー依頼",
+			content: "@Priya PR #80 レビューお願いします",
+			want:    false,
+		},
+		{
+			name:    "設計議論",
+			content: "トークン消費を減らすには、projectContextを初回のみ渡す方法が効果的",
+			want:    false,
+		},
+		{
+			name:    "英語: thanks",
+			content: "Thanks for the update!",
+			want:    true,
+		},
+		{
+			name:    "英語: good morning",
+			content: "Good morning everyone!",
+			want:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isLowPriorityMessage(tt.content)
+			if got != tt.want {
+				t.Errorf("isLowPriorityMessage(%q) = %v, want %v", tt.content, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSelectHistoryMessages(t *testing.T) {
+	// モデル作成（簡易版）
+	m := &tuiModel{
+		messages: []tuiMessage{
+			{role: "user", content: "おはよう"},                        // 低優先 (雑談)
+			{role: "mei", content: "おはようございます"},                // 低優先 (雑談)
+			{role: "user", content: "トークン消費を減らしたい。調整案ある？"},
+			{role: "yuki", content: "調整案として4つ提案する。1. 15→8に減らす..."},
+			{role: "user", content: "うん"},                           // 低優先 (短い)
+			{role: "user", content: "これは全部やろう。実装よろしく"},
+			{role: "yuki", content: "了解。4つ全部やる。作業入る。"},
+		},
+	}
+
+	selected := m.selectHistoryMessages()
+
+	// 雑談・短いメッセージが除外されていることを確認
+	for _, msg := range selected {
+		if msg.content == "おはよう" || msg.content == "おはようございます" || msg.content == "うん" {
+			t.Errorf("low priority message should be excluded: %q", msg.content)
+		}
+	}
+
+	// 技術的な内容は含まれていることを確認
+	hasImportant := false
+	for _, msg := range selected {
+		if msg.content == "トークン消費を減らしたい。調整案ある？" {
+			hasImportant = true
+			break
+		}
+	}
+	if !hasImportant {
+		t.Error("important message should be included")
+	}
+}
+
 func TestGetWorktreePath(t *testing.T) {
 	tests := []struct {
 		name           string
