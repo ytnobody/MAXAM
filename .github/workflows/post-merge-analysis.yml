@@ -1,0 +1,45 @@
+name: Post-merge Analysis Request
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  post-comment:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post analysis request comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const prTitle = context.payload.pull_request.title;
+            const prAuthor = context.payload.pull_request.user.login;
+            const mergedBy = context.payload.pull_request.merged_by?.login || 'unknown';
+
+            const body = `## 📊 分析依頼
+
+            @Amara このPRがマージされました。分析をお願いします。
+
+            - **PR**: #${prNumber} ${prTitle}
+            - **Author**: @${prAuthor}
+            - **Merged by**: @${mergedBy}
+
+            ### 分析観点
+            - 実装パターンの抽出
+            - レビュープロセスの改善点
+            - 学習事項の候補
+
+            ---
+            *このコメントは自動生成されました*`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: body
+            });
