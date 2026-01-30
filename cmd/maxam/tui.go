@@ -232,7 +232,7 @@ func initialTuiModel(workDir string) tuiModel {
 		}
 		agentNames[i] = agentCfg.Name
 	}
-	agentRouter := router.New(routerAgents)
+	agentRouter := router.New(routerAgents, cfg.DefaultAgent)
 
 	// Setup mention checker with agent names from config
 	mention.SetDefaultChecker(mention.NewChecker(agentNames))
@@ -877,82 +877,12 @@ func (m tuiModel) View() string {
 	)
 }
 
-// detectAgents は入力から対象エージェントを複数検出（並列呼び出し用）
-// メンションがあればバイパス、なければルーターで判定
+// detectAgents は入力から対象エージェントを検出
+// @メンションがあればその人へ、なければデフォルトエージェントへルーティング
 func (m *tuiModel) detectAgents(text string) []string {
-	lower := strings.ToLower(text)
-	var agents []string
-	seen := make(map[string]bool)
-
-	// 明示的なメンションを優先的にチェック（ルーターをバイパス）
-	if strings.Contains(lower, "@yuki") || strings.Contains(lower, "ゆきちゃん") {
-		agents = append(agents, "yuki")
-		seen["yuki"] = true
-	}
-	if strings.Contains(lower, "@priya") || strings.Contains(lower, "プリヤちゃん") {
-		agents = append(agents, "priya")
-		seen["priya"] = true
-	}
-	if strings.Contains(lower, "@amara") || strings.Contains(lower, "アマラちゃん") {
-		agents = append(agents, "amara")
-		seen["amara"] = true
-	}
-	if strings.Contains(lower, "@mei") || strings.Contains(lower, "メイちゃん") {
-		agents = append(agents, "mei")
-		seen["mei"] = true
-	}
-	if strings.Contains(lower, "@rin") || strings.Contains(lower, "りんちゃん") {
-		agents = append(agents, "rin")
-		seen["rin"] = true
-	}
-	if strings.Contains(lower, "@shiori") || strings.Contains(lower, "しおりちゃん") {
-		agents = append(agents, "shiori")
-		seen["shiori"] = true
-	}
-
-	// 明示的なメンションがあればそれを返す（ルーターをバイパス）
-	if len(agents) > 0 {
-		return agents
-	}
-
-	// メンションがなければルーターで判定
-	return m.routeMessage(text)
+	return m.router.Route(text)
 }
 
-// routeMessage はルーターを使ってメッセージの宛先を決定
-func (m *tuiModel) routeMessage(text string) []string {
-	// 会話履歴をルーター用のフォーマットに変換（直近4メッセージ）
-	var history []router.Message
-	start := 0
-	if len(m.messages) > 4 {
-		start = len(m.messages) - 4
-	}
-	for i := start; i < len(m.messages); i++ {
-		msg := m.messages[i]
-		role := msg.role
-		if role == "user" {
-			role = "オーナー"
-		} else {
-			role = getTuiFullName(role)
-		}
-		history = append(history, router.Message{
-			Role:    role,
-			Content: msg.content,
-		})
-	}
-
-	// ルーターで判定
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	agents, err := m.router.Route(ctx, text, history)
-	if err != nil || len(agents) == 0 {
-		// フォールバック: Mei
-		return []string{"mei"}
-	}
-
-	return agents
-}
 
 // detectAgent は互換性のため残す（単一検出）
 func (m *tuiModel) detectAgent(text string) string {
