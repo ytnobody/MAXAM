@@ -11,9 +11,10 @@ import (
 
 // Config represents the MAXAM configuration
 type Config struct {
-	Version      string        `yaml:"version"`
-	DefaultAgent string        `yaml:"default_agent,omitempty"`
-	Agents       []AgentConfig `yaml:"agents"`
+	Version             string        `yaml:"version"`
+	DefaultAgent        string        `yaml:"default_agent,omitempty"`
+	Agents              []AgentConfig `yaml:"agents"`
+	AnalysisMinMessages int           `yaml:"analysis_min_messages,omitempty"`
 }
 
 // AgentConfig represents an agent configuration
@@ -23,11 +24,15 @@ type AgentConfig struct {
 	Role     string `yaml:"role"`
 }
 
+// DefaultAnalysisMinMessages is the default minimum message count for analysis
+const DefaultAnalysisMinMessages = 10
+
 // DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		Version:      "1",
-		DefaultAgent: "mei",
+		Version:             "1",
+		DefaultAgent:        "mei",
+		AnalysisMinMessages: DefaultAnalysisMinMessages,
 		Agents: []AgentConfig{
 			{Name: "mei", FullName: "Mei Chen", Role: "PM / 要件定義"},
 			{Name: "yuki", FullName: "Yuki Tanaka", Role: "バックエンド / インフラ"},
@@ -37,6 +42,14 @@ func DefaultConfig() *Config {
 			{Name: "amara", FullName: "Amara Okonkwo", Role: "分析"},
 		},
 	}
+}
+
+// GetAnalysisMinMessages returns the analysis minimum messages with default fallback
+func (c *Config) GetAnalysisMinMessages() int {
+	if c.AnalysisMinMessages <= 0 {
+		return DefaultAnalysisMinMessages
+	}
+	return c.AnalysisMinMessages
 }
 
 // ConfigDir returns the path to ~/.maxam/
