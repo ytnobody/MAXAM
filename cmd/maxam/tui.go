@@ -34,8 +34,11 @@ var (
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("205")).
-			Background(lipgloss.Color("236")).
 			Padding(0, 1)
+
+	// ヘッダー行全体の背景色（控えめなダークグレー）
+	headerStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("236"))
 
 	userStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("251")).
@@ -81,8 +84,11 @@ var (
 
 	statusStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
-			Background(lipgloss.Color("236")).
 			Padding(0, 1)
+
+	// フッター行全体の背景色（控えめなダークグレー）
+	footerStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("236"))
 )
 
 type tuiMessage struct {
@@ -725,15 +731,17 @@ func (m tuiModel) View() string {
 		return "読み込み中..."
 	}
 
-	// Header - ビューに応じてタイトルを切り替え
-	var header string
+	// Header - ビューに応じてタイトルを切り替え（行全体に背景色）
+	var headerContent string
 	if m.currentView == viewTaskboard {
-		header = titleStyle.Render("MAXAM Task Board") + "  " +
+		headerContent = titleStyle.Render("MAXAM Task Board") + "  " +
 			helpStyle.Render("Tab:チャット | ↑↓:選択 Enter:ステータス変更 d:削除")
 	} else {
-		header = titleStyle.Render("MAXAM Team Chat") + "  " +
+		headerContent = titleStyle.Render("MAXAM Team Chat") + "  " +
 			helpStyle.Render("Tab:タスクボード | Ctrl+L:再描画 | exit:終了 clear:リセット")
 	}
+	// 行全体に背景色を適用（幅いっぱいにパディング）
+	header := headerStyle.Width(m.width).Render(headerContent)
 
 	// Main content
 	var mainContent string
@@ -743,30 +751,34 @@ func (m tuiModel) View() string {
 		mainContent = m.viewport.View()
 	}
 
-	// Footer with input (チャットビューのみ)
+	// Footer with input (チャットビューのみ) - ステータス行に背景色
 	var footer string
 	if m.currentView == viewChat {
-		var status string
+		var statusContent string
 		if len(m.processingAgents) > 0 {
 			var names []string
 			for name := range m.processingAgents {
 				names = append(names, getTuiFullName(name))
 			}
-			status = statusStyle.Render(fmt.Sprintf(" %s 処理中... ", strings.Join(names, ", ")))
+			statusContent = statusStyle.Render(fmt.Sprintf(" %s 処理中... ", strings.Join(names, ", ")))
 		} else {
-			status = statusStyle.Render(fmt.Sprintf(" 履歴:%d ↑↓:履歴 PgUp/Dn:スクロール ", len(m.inputHist)))
+			statusContent = statusStyle.Render(fmt.Sprintf(" 履歴:%d ↑↓:履歴 PgUp/Dn:スクロール ", len(m.inputHist)))
 		}
+		// ステータス行全体に背景色を適用
+		statusLine := footerStyle.Width(m.width).Render(statusContent)
 
 		inputLine := "You: " + m.textInput.View()
 
 		// Add mention warning if needed
 		if m.mentionWarning != "" {
-			footer = status + "\n" + warningStyle.Render("⚠️ "+m.mentionWarning) + "\n" + inputLine
+			footer = statusLine + "\n" + warningStyle.Render("⚠️ "+m.mentionWarning) + "\n" + inputLine
 		} else {
-			footer = status + "\n" + inputLine
+			footer = statusLine + "\n" + inputLine
 		}
 	} else {
-		footer = statusStyle.Render(" Tab:チャットに戻る ")
+		// タスクボードビューのフッターにも背景色
+		footerContent := statusStyle.Render(" Tab:チャットに戻る ")
+		footer = footerStyle.Width(m.width).Render(footerContent)
 	}
 
 	// Combine
