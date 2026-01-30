@@ -15,6 +15,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
+	"github.com/ytnobody/MAXAM/internal/ccusage"
 	gh "github.com/ytnobody/MAXAM/internal/github"
 	"github.com/ytnobody/MAXAM/internal/history"
 	"github.com/ytnobody/MAXAM/internal/logger"
@@ -135,6 +136,10 @@ type tuiModel struct {
 
 	// PR watcher for worktree cleanup
 	prWatcher *gh.Watcher
+
+	// ccusage integration
+	ccusageClient *ccusage.Client
+	todayCost     float64
 }
 
 type agentResponseMsg struct {
@@ -204,6 +209,9 @@ func initialTuiModel(workDir string) tuiModel {
 		prWatcher = gh.NewWatcher(ghClient)
 	}
 
+	// Setup ccusage client (silently disabled if not available)
+	ccClient := ccusage.NewClient()
+
 	return tuiModel{
 		agents:           agent.NewAgents(workDir),
 		logMgr:           logger.NewManager(logger.GetDefaultLogDir(), workDir),
@@ -219,6 +227,7 @@ func initialTuiModel(workDir string) tuiModel {
 		taskService:      taskService,
 		taskWatcher:      taskWatcher,
 		prWatcher:        prWatcher,
+		ccusageClient:    ccClient,
 	}
 }
 
@@ -233,6 +242,14 @@ type prMergedMsg struct {
 	branches []string
 }
 
+// ccusageUpdateMsg is sent when ccusage cost is updated
+type ccusageUpdateMsg struct {
+	cost float64
+}
+
+// ccusageTickMsg triggers periodic ccusage updates
+type ccusageTickMsg struct{}
+
 func (m tuiModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{textinput.Blink, tea.EnterAltScreen, m.tickAnalysis()}
 	if m.taskWatcher != nil {
@@ -241,7 +258,33 @@ func (m tuiModel) Init() tea.Cmd {
 	if m.prWatcher != nil {
 		cmds = append(cmds, m.tickPRCheck())
 	}
+	if m.ccusageClient != nil {
+		cmds = append(cmds, m.fetchCcusage(), m.tickCcusage())
+	}
 	return tea.Batch(cmds...)
+}
+
+// tickCcusage returns a command that triggers ccusage update every 5 minutes
+func (m tuiModel) tickCcusage() tea.Cmd {
+	return tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
+		return ccusageTickMsg{}
+	})
+}
+
+// fetchCcusage fetches the current cost from ccusage
+func (m tuiModel) fetchCcusage() tea.Cmd {
+	return func() tea.Msg {
+		if m.ccusageClient == nil {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		usage := m.ccusageClient.GetTodayUsage(ctx)
+		if !usage.Available {
+			return nil
+		}
+		return ccusageUpdateMsg{cost: usage.TodayCost}
+	}
 }
 
 // tickPRCheck returns a command that triggers PR check every 5 minutes
@@ -513,6 +556,20 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case ccusageTickMsg:
+		// 5分ごとにccusageを更新
+		if m.ccusageClient != nil {
+			return m, tea.Batch(
+				m.fetchCcusage(),
+				m.tickCcusage(),
+			)
+		}
+		return m, nil
+
+	case ccusageUpdateMsg:
+		m.todayCost = msg.cost
+		return m, nil
+
 	case agentResponseMsg:
 		// エージェントの処理状態をクリア
 		delete(m.processingAgents, msg.agent)
@@ -762,7 +819,12 @@ func (m tuiModel) View() string {
 			}
 			statusContent = statusStyle.Render(fmt.Sprintf(" %s 処理中... ", strings.Join(names, ", ")))
 		} else {
-			statusContent = statusStyle.Render(fmt.Sprintf(" 履歴:%d ↑↓:履歴 PgUp/Dn:スクロール ", len(m.inputHist)))
+			// Build status with optional cost display
+			statusText := fmt.Sprintf(" 履歴:%d ↑↓:履歴 PgUp/Dn:スクロール ", len(m.inputHist))
+			if m.ccusageClient != nil && m.todayCost > 0 {
+				statusText += fmt.Sprintf("| %s today ", ccusage.FormatCost(m.todayCost))
+			}
+			statusContent = statusStyle.Render(statusText)
 		}
 		// ステータス行全体に背景色を適用
 		statusLine := footerStyle.Width(m.width).Render(statusContent)
