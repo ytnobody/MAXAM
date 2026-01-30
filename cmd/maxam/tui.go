@@ -221,13 +221,18 @@ func initialTuiModel(workDir string) tuiModel {
 		cfg = config.DefaultConfig()
 	}
 	routerAgents := make([]router.AgentInfo, len(cfg.Agents))
+	agentNames := make([]string, len(cfg.Agents))
 	for i, agentCfg := range cfg.Agents {
 		routerAgents[i] = router.AgentInfo{
 			Name: agentCfg.Name,
 			Role: agentCfg.Role,
 		}
+		agentNames[i] = agentCfg.Name
 	}
 	agentRouter := router.New(routerAgents)
+
+	// Setup mention checker with agent names from config
+	mention.SetDefaultChecker(mention.NewChecker(agentNames))
 
 	return tuiModel{
 		agents:           agent.NewAgents(workDir),
