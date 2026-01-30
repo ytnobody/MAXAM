@@ -24,6 +24,7 @@ type Config struct {
 	Agents              []AgentConfig `yaml:"agents"`
 	AnalysisMinMessages int           `yaml:"analysis_min_messages,omitempty"`
 	ContextMode         ContextMode   `yaml:"context_mode,omitempty"`
+	YOLOMode            bool          `yaml:"yolo_mode,omitempty"`
 }
 
 // AgentConfig represents an agent configuration
