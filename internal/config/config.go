@@ -65,7 +65,7 @@ func (c *Config) GetAnalysisMinMessages() int {
 // GetContextMode returns the context mode with default fallback
 func (c *Config) GetContextMode() ContextMode {
 	if c.ContextMode == "" {
-		return ContextModeFull
+		return ContextModeSummary
 	}
 	return c.ContextMode
 }

@@ -173,9 +173,9 @@ func TestGetContextMode(t *testing.T) {
 		expected ContextMode
 	}{
 		{
-			name:     "デフォルト（空）はfull",
+			name:     "デフォルト（空）はsummary",
 			cfg:      &Config{},
-			expected: ContextModeFull,
+			expected: ContextModeSummary,
 		},
 		{
 			name:     "明示的にfull",
@@ -206,9 +206,9 @@ func TestIsSummaryMode(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "デフォルトはfalse",
+			name:     "デフォルトはtrue（summaryがデフォルト）",
 			cfg:      &Config{},
-			expected: false,
+			expected: true,
 		},
 		{
 			name:     "fullはfalse",
