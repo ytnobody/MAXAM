@@ -166,6 +166,72 @@ func TestListAgents(t *testing.T) {
 	}
 }
 
+func TestGetContextMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		expected ContextMode
+	}{
+		{
+			name:     "デフォルト（空）はfull",
+			cfg:      &Config{},
+			expected: ContextModeFull,
+		},
+		{
+			name:     "明示的にfull",
+			cfg:      &Config{ContextMode: ContextModeFull},
+			expected: ContextModeFull,
+		},
+		{
+			name:     "summary",
+			cfg:      &Config{ContextMode: ContextModeSummary},
+			expected: ContextModeSummary,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.GetContextMode()
+			if got != tt.expected {
+				t.Errorf("GetContextMode() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsSummaryMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		expected bool
+	}{
+		{
+			name:     "デフォルトはfalse",
+			cfg:      &Config{},
+			expected: false,
+		},
+		{
+			name:     "fullはfalse",
+			cfg:      &Config{ContextMode: ContextModeFull},
+			expected: false,
+		},
+		{
+			name:     "summaryはtrue",
+			cfg:      &Config{ContextMode: ContextModeSummary},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.IsSummaryMode()
+			if got != tt.expected {
+				t.Errorf("IsSummaryMode() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestAgentConfigModel(t *testing.T) {
 	tests := []struct {
 		name     string

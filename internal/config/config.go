@@ -9,12 +9,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ContextMode represents the context mode for system prompts
+type ContextMode string
+
+const (
+	ContextModeFull    ContextMode = "full"
+	ContextModeSummary ContextMode = "summary"
+)
+
 // Config represents the MAXAM configuration
 type Config struct {
 	Version             string        `yaml:"version"`
 	DefaultAgent        string        `yaml:"default_agent,omitempty"`
 	Agents              []AgentConfig `yaml:"agents"`
 	AnalysisMinMessages int           `yaml:"analysis_min_messages,omitempty"`
+	ContextMode         ContextMode   `yaml:"context_mode,omitempty"`
 }
 
 // AgentConfig represents an agent configuration
@@ -51,6 +60,19 @@ func (c *Config) GetAnalysisMinMessages() int {
 		return DefaultAnalysisMinMessages
 	}
 	return c.AnalysisMinMessages
+}
+
+// GetContextMode returns the context mode with default fallback
+func (c *Config) GetContextMode() ContextMode {
+	if c.ContextMode == "" {
+		return ContextModeFull
+	}
+	return c.ContextMode
+}
+
+// IsSummaryMode returns true if context mode is summary
+func (c *Config) IsSummaryMode() bool {
+	return c.GetContextMode() == ContextModeSummary
 }
 
 // ConfigDir returns the path to ~/.maxam/
