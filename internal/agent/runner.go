@@ -101,6 +101,59 @@ func (r *Runner) Run(ctx context.Context, prompt string) (string, error) {
 	})
 }
 
+// Model represents the Claude model to use
+type Model string
+
+const (
+	ModelDefault Model = ""       // Use claude's default
+	ModelHaiku   Model = "haiku"  // Fast, lightweight
+	ModelSonnet  Model = "sonnet" // Balanced
+	ModelOpus    Model = "opus"   // Most capable
+)
+
+// RunWithModel executes a task with a specific model
+func (r *Runner) RunWithModel(ctx context.Context, prompt string, model Model) (string, error) {
+	systemPrompt, err := r.buildSystemPrompt()
+	if err != nil {
+		return "", fmt.Errorf("build system prompt: %w", err)
+	}
+
+	args := []string{
+		"--print",
+		"--system-prompt", systemPrompt,
+		"--permission-mode", "bypassPermissions",
+	}
+
+	if model != ModelDefault {
+		args = append(args, "--model", string(model))
+	}
+
+	args = append(args, prompt)
+
+	cfg := retry.DefaultConfig()
+
+	return retry.DoWithResult(ctx, cfg, func() (string, error) {
+		runCtx, cancel := context.WithTimeout(ctx, r.Timeout)
+		defer cancel()
+
+		cmd := exec.CommandContext(runCtx, "claude", args...)
+		cmd.Dir = r.WorkDir
+
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			if runCtx.Err() == context.DeadlineExceeded {
+				return "", fmt.Errorf("timeout after %v", r.Timeout)
+			}
+			return "", fmt.Errorf("run claude: %w\nstderr: %s", err, stderr.String())
+		}
+
+		return stdout.String(), nil
+	})
+}
+
 // RunWithAllowedTools executes with specific tools enabled
 func (r *Runner) RunWithAllowedTools(ctx context.Context, prompt string, tools []string) (string, error) {
 	systemPrompt, err := r.buildSystemPrompt()
