@@ -24,15 +24,28 @@ MAXAMは6人のAIエージェントが協調して開発業務を遂行するシ
 
 ### 必要環境
 
-- Go 1.23+
 - Claude Code CLI (`claude`)
 
-### ビルド
+### インストール方法
+
+#### ダウンロード（推奨）
+
+GitHub Releases からお使いの環境に合ったバイナリをダウンロード：
+
+https://github.com/ytnobody/MAXAM/releases
+
+#### go install
+
+```bash
+go install github.com/ytnobody/MAXAM/cmd/maxam@latest
+```
+
+#### ソースからビルド
 
 ```bash
 git clone https://github.com/ytnobody/MAXAM.git
 cd MAXAM
-go build -o bin/maxam ./cmd/maxam
+make build
 ```
 
 ## 使い方
