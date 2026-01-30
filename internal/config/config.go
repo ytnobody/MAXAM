@@ -31,6 +31,7 @@ type AgentConfig struct {
 	Name     string `yaml:"name"`
 	FullName string `yaml:"full_name"`
 	Role     string `yaml:"role"`
+	Model    string `yaml:"model,omitempty"` // opus, sonnet, haiku
 }
 
 // DefaultAnalysisMinMessages is the default minimum message count for analysis
