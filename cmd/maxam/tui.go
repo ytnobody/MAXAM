@@ -928,12 +928,20 @@ func (m *tuiModel) buildPrompt(agentName, input string) string {
 	sb.WriteString("- Priya: レビュー/QA\n")
 	sb.WriteString("- Amara: 分析\n\n")
 	sb.WriteString("重要:\n")
-	sb.WriteString("- 情報が不足していたら質問してください\n")
-	sb.WriteString("- 曖昧な指示には確認を取ってください\n")
-	sb.WriteString("- 作業前に計画を説明し、OKをもらってから進めてください\n")
-	sb.WriteString("- 短く自然な会話で返答してください\n")
-	sb.WriteString("- 他のメンバーに作業を依頼するときは「@名前」で呼びかけてください\n")
-	sb.WriteString("- 呼びかけられたら、その依頼に応答してください\n\n")
+	if m.yoloMode {
+		// YOLOモード: 確認をスキップして進める
+		sb.WriteString("- 【YOLOモード】オーナーはあなたを信頼しています。確認質問をせず、自分の判断で作業を進めてください\n")
+		sb.WriteString("- 短く自然な会話で返答してください\n")
+		sb.WriteString("- 他のメンバーに作業を依頼するときは「@名前」で呼びかけてください\n")
+		sb.WriteString("- 呼びかけられたら、その依頼に応答してください\n\n")
+	} else {
+		sb.WriteString("- 情報が不足していたら質問してください\n")
+		sb.WriteString("- 曖昧な指示には確認を取ってください\n")
+		sb.WriteString("- 作業前に計画を説明し、OKをもらってから進めてください\n")
+		sb.WriteString("- 短く自然な会話で返答してください\n")
+		sb.WriteString("- 他のメンバーに作業を依頼するときは「@名前」で呼びかけてください\n")
+		sb.WriteString("- 呼びかけられたら、その依頼に応答してください\n\n")
+	}
 
 	// Add project context (初回のみフル、以降は要約)
 	if m.projectContext != "" {
