@@ -20,6 +20,7 @@ type Runner struct {
 	WorkDir     string
 	ClaudeMDDir string
 	Timeout     time.Duration
+	ContextMode config.ContextMode
 }
 
 // NewRunner creates a new agent runner
@@ -32,6 +33,14 @@ func NewRunner(name, workDir, claudeMDDir string) *Runner {
 	}
 }
 
+// getClaudeMDFilename returns the appropriate CLAUDE.md filename based on context mode
+func (r *Runner) getClaudeMDFilename() string {
+	if r.ContextMode == config.ContextModeSummary {
+		return "CLAUDE.summary.md"
+	}
+	return "CLAUDE.md"
+}
+
 // buildSystemPrompt reads the agent's CLAUDE.md and builds system prompt
 func (r *Runner) buildSystemPrompt() (string, error) {
 	var parts []string
@@ -42,16 +51,30 @@ func (r *Runner) buildSystemPrompt() (string, error) {
 	}
 
 	// 2. Project-specific CLAUDE.md (optional)
-	sharedPath := filepath.Join(r.WorkDir, "CLAUDE.md")
+	// In summary mode, try CLAUDE.summary.md first, fallback to CLAUDE.md
+	filename := r.getClaudeMDFilename()
+	sharedPath := filepath.Join(r.WorkDir, filename)
 	if data, err := os.ReadFile(sharedPath); err == nil {
 		parts = append(parts, string(data))
+	} else if r.ContextMode == config.ContextModeSummary {
+		// Fallback to full version if summary not found
+		sharedPath = filepath.Join(r.WorkDir, "CLAUDE.md")
+		if data, err := os.ReadFile(sharedPath); err == nil {
+			parts = append(parts, string(data))
+		}
 	}
 
 	// 3. Agent-specific CLAUDE.md (optional)
 	if r.ClaudeMDDir != "" {
-		agentPath := filepath.Join(r.ClaudeMDDir, "CLAUDE.md")
+		agentPath := filepath.Join(r.ClaudeMDDir, filename)
 		if data, err := os.ReadFile(agentPath); err == nil {
 			parts = append(parts, string(data))
+		} else if r.ContextMode == config.ContextModeSummary {
+			// Fallback to full version if summary not found
+			agentPath = filepath.Join(r.ClaudeMDDir, "CLAUDE.md")
+			if data, err := os.ReadFile(agentPath); err == nil {
+				parts = append(parts, string(data))
+			}
 		}
 	}
 
@@ -225,6 +248,9 @@ func NewAgents(workDir string) *Agents {
 
 	runners := make(map[string]*Runner)
 
+	// Get context mode
+	contextMode := cfg.GetContextMode()
+
 	// Create runners for configured agents
 	for _, agentCfg := range cfg.Agents {
 		name := agentCfg.Name
@@ -236,7 +262,9 @@ func NewAgents(workDir string) *Agents {
 		agentDir := filepath.Join(agentsDir, name)
 		// Only add if CLAUDE.md exists
 		if _, err := os.Stat(filepath.Join(agentDir, "CLAUDE.md")); err == nil {
-			runners[name] = NewRunner(fullName, workDir, agentDir)
+			runner := NewRunner(fullName, workDir, agentDir)
+			runner.ContextMode = contextMode
+			runners[name] = runner
 		}
 	}
 
