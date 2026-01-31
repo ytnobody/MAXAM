@@ -303,3 +303,36 @@ func TestYOLOMode(t *testing.T) {
 		})
 	}
 }
+
+func TestGetWorkersPerAgent(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		expected int
+	}{
+		{
+			name:     "デフォルト（0）は1",
+			cfg:      &Config{},
+			expected: DefaultWorkersPerAgent,
+		},
+		{
+			name:     "カスタム値",
+			cfg:      &Config{WorkersPerAgent: 3},
+			expected: 3,
+		},
+		{
+			name:     "負の値はデフォルト",
+			cfg:      &Config{WorkersPerAgent: -1},
+			expected: DefaultWorkersPerAgent,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.GetWorkersPerAgent()
+			if got != tt.expected {
+				t.Errorf("GetWorkersPerAgent() = %d, want %d", got, tt.expected)
+			}
+		})
+	}
+}
