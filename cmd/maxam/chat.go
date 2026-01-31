@@ -10,11 +10,13 @@ import (
 
 	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/logger"
+	"github.com/ytnobody/MAXAM/internal/member"
 )
 
 // ChatSession manages an interactive conversation with an agent
 type ChatSession struct {
 	agents  *agent.Agents
+	members *member.Members
 	logMgr  *logger.Manager
 	workDir string
 	history []chatMessage
@@ -37,6 +39,7 @@ func runChat() {
 
 	session := &ChatSession{
 		agents:  agent.NewAgents(workDir),
+		members: member.NewMembers(workDir),
 		logMgr:  logger.NewManager(logger.GetDefaultLogDir(), workDir),
 		workDir: workDir,
 		history: make([]chatMessage, 0),
@@ -57,7 +60,7 @@ func (s *ChatSession) runAgentChat(agentName string) {
 		os.Exit(1)
 	}
 
-	fullName := getFullName(agentName)
+	fullName := s.members.GetFullName(agentName)
 	fmt.Printf("Chat with %s\n", fullName)
 	fmt.Println("Type 'exit' to quit, 'clear' to reset conversation")
 	fmt.Println(strings.Repeat("-", 50))
@@ -113,7 +116,8 @@ func (s *ChatSession) runAgentChat(agentName string) {
 
 func (s *ChatSession) runTeamChat() {
 	fmt.Println("Chat with MAXAM Team")
-	fmt.Println("Mei will coordinate. Mention others: @yuki, @rin, @shiori, @priya, @amara")
+	fmt.Println("Mention members with @name. Example: @yuki, @priya")
+	fmt.Println("Default: Mei will respond if no mention.")
 	fmt.Println("Type 'exit' to quit")
 	fmt.Println(strings.Repeat("-", 50))
 
@@ -136,27 +140,39 @@ func (s *ChatSession) runTeamChat() {
 
 		s.history = append(s.history, chatMessage{role: "user", content: input})
 
-		// Detect mentioned agent or default to Mei
-		agentName := detectMention(input)
-		runner, _ := s.agents.Get(agentName)
-		fullName := getFullName(agentName)
-
-		prompt := s.buildPrompt(agentName, input)
-
-		fmt.Printf("\n%s: ", fullName)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		result, err := runner.Run(ctx, prompt)
-		cancel()
-
-		if err != nil {
-			fmt.Printf("(error: %v)\n", err)
-			continue
+		// Detect all mentioned agents
+		mentioned := s.members.DetectMentions(input)
+		if len(mentioned) == 0 {
+			// Default to Mei if no one is mentioned
+			mentioned = []string{"mei"}
 		}
 
-		result = strings.TrimSpace(result)
-		fmt.Println(result)
+		// Call each mentioned agent in order
+		for _, agentName := range mentioned {
+			runner, ok := s.agents.Get(agentName)
+			if !ok {
+				fmt.Printf("\n(%s is not available)\n", agentName)
+				continue
+			}
 
-		s.history = append(s.history, chatMessage{role: agentName, content: result})
+			fullName := s.members.GetFullName(agentName)
+			prompt := s.buildPrompt(agentName, input)
+
+			fmt.Printf("\n%s: ", fullName)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			result, err := runner.Run(ctx, prompt)
+			cancel()
+
+			if err != nil {
+				fmt.Printf("(error: %v)\n", err)
+				continue
+			}
+
+			result = strings.TrimSpace(result)
+			fmt.Println(result)
+
+			s.history = append(s.history, chatMessage{role: agentName, content: result})
+		}
 	}
 }
 
@@ -182,7 +198,7 @@ func (s *ChatSession) buildPrompt(agentName, currentInput string) string {
 			if msg.role == "user" {
 				sb.WriteString(fmt.Sprintf("ユーザー: %s\n\n", msg.content))
 			} else {
-				sb.WriteString(fmt.Sprintf("%s: %s\n\n", getFullName(msg.role), msg.content))
+				sb.WriteString(fmt.Sprintf("%s: %s\n\n", s.members.GetFullName(msg.role), msg.content))
 			}
 		}
 	}
@@ -192,43 +208,4 @@ func (s *ChatSession) buildPrompt(agentName, currentInput string) string {
 	sb.WriteString("あなたの返答:")
 
 	return sb.String()
-}
-
-func detectMention(text string) string {
-	lower := strings.ToLower(text)
-	if strings.Contains(lower, "@yuki") || strings.Contains(lower, "ゆき") {
-		return "yuki"
-	}
-	if strings.Contains(lower, "@rin") || strings.Contains(lower, "りん") {
-		return "rin"
-	}
-	if strings.Contains(lower, "@shiori") || strings.Contains(lower, "しおり") {
-		return "shiori"
-	}
-	if strings.Contains(lower, "@priya") || strings.Contains(lower, "プリヤ") {
-		return "priya"
-	}
-	if strings.Contains(lower, "@amara") || strings.Contains(lower, "アマラ") {
-		return "amara"
-	}
-	return "mei" // default
-}
-
-func getFullName(agentName string) string {
-	switch agentName {
-	case "yuki":
-		return "Yuki"
-	case "rin":
-		return "Rin"
-	case "shiori":
-		return "Shiori"
-	case "priya":
-		return "Priya"
-	case "amara":
-		return "Amara"
-	case "mei":
-		return "Mei"
-	default:
-		return agentName
-	}
 }
