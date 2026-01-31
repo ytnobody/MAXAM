@@ -154,6 +154,26 @@ type: feat, fix, refactor, docs, test, chore
 | `/tmp/maxam/{agent}/{project}/` | 各エージェント用worktree（単独リポジトリ） |
 | `/tmp/maxam/{agent}/{parent}_{child}/` | 各エージェント用worktree（ネストしたリポジトリ） |
 
+**例：単独プロジェクト**
+```
+/tmp/maxam/agent1/project/      # ~/projectで作業
+/tmp/maxam/agent2/project/      # agent2のproject作業
+```
+
+**例：ネストしたサブプロジェクト（親ディレクトリ配下に複数リポジトリ）**
+```
+~/parent/                       # 親ディレクトリ（gitリポジトリではない）
+├── repo1/                      # リポジトリ1
+├── repo2/                      # リポジトリ2
+└── repo3/                      # リポジトリ3
+
+↓ worktreeパス（_で連結）
+
+/tmp/maxam/agent1/parent_repo1/    # parent/repo1
+/tmp/maxam/agent1/parent_repo2/    # parent/repo2
+/tmp/maxam/agent1/parent_repo3/    # parent/repo3
+```
+
 ### 運用ルール
 
 1. **作業開始時**: worktreeが存在しなければ作成
@@ -173,7 +193,7 @@ type: feat, fix, refactor, docs, test, chore
 - PMは元リポジトリで要件定義・ドキュメント作業
 - 他メンバーは自分のworktreeで独立して作業可能
 - 衝突を気にせず並列作業できる
-- `/tmp/maxam/` 配下はMAXAMチーム共通の作業場所として、複数プロジェクトを管理
+- `/tmp/maxam/` 配下はチーム共通の作業場所として、複数プロジェクトを管理
 - **サブプロジェクト対応**: 親ディレクトリ配下のgitリポジトリを再帰的に検出し、コンテキストに含める
 
 ## 分析サイクル（イベント駆動）
