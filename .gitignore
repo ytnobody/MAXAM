@@ -30,6 +30,7 @@ logs/*/*.md
 
 # Local settings
 .claude/settings.local.json
+CLAUDE.local.md
 
 # Task data (stored in ~/.maxam/)
 tasks.json

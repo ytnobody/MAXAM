@@ -6,14 +6,7 @@ MAXAMは複数のAIエージェントが協調して開発業務を遂行する�
 
 ## チームメンバー
 
-| 名前 | 役割 |
-|------|------|
-| Mei Chen | 要件定義 + PM + アーキテクト |
-| Yuki Tanaka | バックエンド + インフラ |
-| Rin Sato | フロントエンド + バックエンド |
-| Shiori Tanaka | テスト + ドキュメント |
-| Priya Sharma | レビュー + セキュリティ + QA |
-| Amara Okonkwo | 分析 + 法的基礎知識 |
+チームメンバー情報は `CLAUDE.local.md` で管理されます。
 
 ## コーディング規約
 
@@ -52,7 +45,7 @@ type: feat, fix, refactor, docs, test, chore
 
 | 変更規模 | フロー |
 |----------|--------|
-| 軽微（typo、コメント等） | Priyaがレビュー＆マージ |
+| 軽微（typo、コメント等） | レビュアーがレビュー＆マージ |
 | 大きい（機能追加等） | オーナー確認後マージ |
 
 ## 通信規約
@@ -63,9 +56,9 @@ type: feat, fix, refactor, docs, test, chore
 
 ## エスカレーションルール
 
-1. 同一PR差し戻し3回超過 → Meiへ
-2. `[SEC-CRITICAL]` → 即ブロック、Meiへ
-3. 要件不明確 → Meiへ
+1. 同一PR差し戻し3回超過 → PMへ
+2. `[SEC-CRITICAL]` → 即ブロック、PMへ
+3. 要件不明確 → PMへ
 
 ## Worktree運用
 
@@ -74,8 +67,8 @@ type: feat, fix, refactor, docs, test, chore
 ```
 
 - 各エージェントは専用のworktreeで作業
-- Meiは元リポジトリで作業
+- PMは元リポジトリで作業
 
 ---
 
-*詳細はCLAUDE.md（フル版）を参照*
+*詳細はCLAUDE.md（フル版）を参照。チーム固有情報はCLAUDE.local.mdを参照*
