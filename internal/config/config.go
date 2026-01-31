@@ -25,6 +25,7 @@ type Config struct {
 	AnalysisMinMessages int           `yaml:"analysis_min_messages,omitempty"`
 	ContextMode         ContextMode   `yaml:"context_mode,omitempty"`
 	YOLOMode            bool          `yaml:"yolo_mode,omitempty"`
+	WorkersPerAgent     int           `yaml:"workers_per_agent,omitempty"`
 }
 
 // AgentConfig represents an agent configuration
@@ -74,6 +75,17 @@ func (c *Config) GetContextMode() ContextMode {
 // IsSummaryMode returns true if context mode is summary
 func (c *Config) IsSummaryMode() bool {
 	return c.GetContextMode() == ContextModeSummary
+}
+
+// DefaultWorkersPerAgent is the default number of workers per agent
+const DefaultWorkersPerAgent = 1
+
+// GetWorkersPerAgent returns workers per agent with default fallback
+func (c *Config) GetWorkersPerAgent() int {
+	if c.WorkersPerAgent <= 0 {
+		return DefaultWorkersPerAgent
+	}
+	return c.WorkersPerAgent
 }
 
 // ConfigDir returns the path to ~/.maxam/
