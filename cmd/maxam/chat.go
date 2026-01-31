@@ -113,7 +113,7 @@ func (s *ChatSession) runAgentChat(agentName string) {
 
 func (s *ChatSession) runTeamChat() {
 	fmt.Println("Chat with MAXAM Team")
-	fmt.Println("Mei will coordinate. Mention others: @yuki, @rin, @shiori, @priya, @amara")
+	fmt.Println("Mei will coordinate. Mention others: @yuki, @rin, @shiori, @priya, @amara, @alex, @hana")
 	fmt.Println("Type 'exit' to quit")
 	fmt.Println(strings.Repeat("-", 50))
 
@@ -136,27 +136,35 @@ func (s *ChatSession) runTeamChat() {
 
 		s.history = append(s.history, chatMessage{role: "user", content: input})
 
-		// Detect mentioned agent or default to Mei
-		agentName := detectMention(input)
-		runner, _ := s.agents.Get(agentName)
-		fullName := getFullName(agentName)
+		// Detect all mentioned agents (returns array)
+		mentionedAgents := detectMentions(input)
 
-		prompt := s.buildPrompt(agentName, input)
+		// Call each mentioned agent sequentially
+		for _, agentName := range mentionedAgents {
+			runner, ok := s.agents.Get(agentName)
+			if !ok {
+				fmt.Printf("\n%s: (agent not configured)\n", getFullName(agentName))
+				continue
+			}
+			fullName := getFullName(agentName)
 
-		fmt.Printf("\n%s: ", fullName)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		result, err := runner.Run(ctx, prompt)
-		cancel()
+			prompt := s.buildPrompt(agentName, input)
 
-		if err != nil {
-			fmt.Printf("(error: %v)\n", err)
-			continue
+			fmt.Printf("\n%s: ", fullName)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			result, err := runner.Run(ctx, prompt)
+			cancel()
+
+			if err != nil {
+				fmt.Printf("(error: %v)\n", err)
+				continue
+			}
+
+			result = strings.TrimSpace(result)
+			fmt.Println(result)
+
+			s.history = append(s.history, chatMessage{role: agentName, content: result})
 		}
-
-		result = strings.TrimSpace(result)
-		fmt.Println(result)
-
-		s.history = append(s.history, chatMessage{role: agentName, content: result})
 	}
 }
 
@@ -194,24 +202,41 @@ func (s *ChatSession) buildPrompt(agentName, currentInput string) string {
 	return sb.String()
 }
 
-func detectMention(text string) string {
+func detectMentions(text string) []string {
 	lower := strings.ToLower(text)
+	var agents []string
+
+	// Check each agent - order doesn't matter for multiple mentions
+	if strings.Contains(lower, "@mei") || strings.Contains(lower, "めい") {
+		agents = append(agents, "mei")
+	}
 	if strings.Contains(lower, "@yuki") || strings.Contains(lower, "ゆき") {
-		return "yuki"
+		agents = append(agents, "yuki")
 	}
 	if strings.Contains(lower, "@rin") || strings.Contains(lower, "りん") {
-		return "rin"
+		agents = append(agents, "rin")
 	}
 	if strings.Contains(lower, "@shiori") || strings.Contains(lower, "しおり") {
-		return "shiori"
+		agents = append(agents, "shiori")
 	}
 	if strings.Contains(lower, "@priya") || strings.Contains(lower, "プリヤ") {
-		return "priya"
+		agents = append(agents, "priya")
 	}
 	if strings.Contains(lower, "@amara") || strings.Contains(lower, "アマラ") {
-		return "amara"
+		agents = append(agents, "amara")
 	}
-	return "mei" // default
+	if strings.Contains(lower, "@alex") || strings.Contains(lower, "アレックス") {
+		agents = append(agents, "alex")
+	}
+	if strings.Contains(lower, "@hana") || strings.Contains(lower, "ハナ") {
+		agents = append(agents, "hana")
+	}
+
+	// Default to Mei if no mentions
+	if len(agents) == 0 {
+		return []string{"mei"}
+	}
+	return agents
 }
 
 func getFullName(agentName string) string {
@@ -228,6 +253,10 @@ func getFullName(agentName string) string {
 		return "Amara"
 	case "mei":
 		return "Mei"
+	case "alex":
+		return "Alex"
+	case "hana":
+		return "Hana"
 	default:
 		return agentName
 	}
