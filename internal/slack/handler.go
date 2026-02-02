@@ -113,13 +113,17 @@ func (h *Handler) handleChannelMessages(channel string, msgs []*IncomingMessage)
 		// Direct response from mentioned agent
 		h.client.PostMessageAsAgent(channel, agentName, result, threadTS)
 	} else {
-		// Mei's structured response
+		// Default agent's structured response
 		response := parseResponse(result)
+		defaultAgentFullName := h.members.GetFullName(h.defaultAgent)
+		if defaultAgentFullName == "" {
+			defaultAgentFullName = h.members.GetFullName("mei")
+		}
 		if response.CustomerReply != "" {
-			h.client.PostMessageAsAgent(channel, "Mei Chen", response.CustomerReply, threadTS)
+			h.client.PostMessageAsAgent(channel, defaultAgentFullName, response.CustomerReply, threadTS)
 		}
 		if response.TeamInstruction != "" {
-			h.handleTeamInstruction(response.TeamInstruction, channel, threadTS)
+			h.handleTeamInstruction(response.TeamInstruction, channel, threadTS, defaultAgentFullName)
 		}
 	}
 }
@@ -246,17 +250,23 @@ func saveSection(resp *parsedResponse, section, content string) {
 	}
 }
 
-func (h *Handler) handleTeamInstruction(instruction string, channel, threadTS string) {
-	// Check if it's for Yuki (implementation)
+func (h *Handler) handleTeamInstruction(instruction string, channel, threadTS, senderFullName string) {
 	instructionLower := strings.ToLower(instruction)
 
-	if strings.Contains(instructionLower, "yuki") ||
-		strings.Contains(instructionLower, "実装") ||
-		strings.Contains(instructionLower, "implement") {
+	// Check if instruction mentions any configured agent by name
+	for _, m := range h.members.All() {
+		if strings.Contains(instructionLower, strings.ToLower(m.Name)) {
+			h.client.PostMessageAsAgent(channel, senderFullName,
+				fmt.Sprintf("%sに依頼しました。完了次第お知らせします。", m.FullName),
+				threadTS)
+			return
+		}
+	}
 
-		// Notify in Slack
-		h.client.PostMessageAsAgent(channel, "Mei Chen",
-			"Yukiに実装を依頼しました。完了次第お知らせします。",
+	// Check for implementation-related keywords
+	if strings.Contains(instructionLower, "実装") || strings.Contains(instructionLower, "implement") {
+		h.client.PostMessageAsAgent(channel, senderFullName,
+			"実装を依頼しました。完了次第お知らせします。",
 			threadTS)
 	}
 }
