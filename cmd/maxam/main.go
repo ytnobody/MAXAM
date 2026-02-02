@@ -24,6 +24,8 @@ func main() {
 	switch cmd {
 	case "task":
 		runTaskLegacy()
+	case "team":
+		runTeam()
 	case "review":
 		runReview()
 	case "ask":
@@ -58,6 +60,10 @@ Commands:
   task list            List all tasks on the taskboard
   task delete <id>     Delete a task by ID
   task status <id> <s> Change task status (pending/in_progress/completed)
+  team init            Initialize team configuration interactively
+  team add <n> <role>  Add a team member
+  team list            List team members
+  team remove <name>   Remove a team member
   review <description> Run a full review cycle (Yuki → Priya)
   ask <agent> <prompt> Ask a specific agent a question
   analyze              Run Amara's weekly analysis

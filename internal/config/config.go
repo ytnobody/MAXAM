@@ -241,3 +241,43 @@ func Save(cfg *Config) error {
 
 	return nil
 }
+
+// SaveToProject writes configuration to project/.maxam/config.yaml
+func SaveToProject(projectDir string, cfg *Config) error {
+	configDir := ProjectConfigDir(projectDir)
+
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("create project config dir: %w", err)
+	}
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	configPath := filepath.Join(configDir, "config.yaml")
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("write project config: %w", err)
+	}
+
+	return nil
+}
+
+// LoadProjectConfig loads only the project-local config (not merged)
+func LoadProjectConfig(projectDir string) (*Config, error) {
+	projectConfigPath := filepath.Join(ProjectConfigDir(projectDir), "config.yaml")
+	data, err := os.ReadFile(projectConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &Config{Version: "1"}, nil
+		}
+		return nil, fmt.Errorf("read project config: %w", err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse project config: %w", err)
+	}
+
+	return &cfg, nil
+}
