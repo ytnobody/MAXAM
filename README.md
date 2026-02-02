@@ -147,6 +147,60 @@ agents:
 - `haiku`: 高速・低コスト、レビュー・軽量タスク向け
 - `opus`: 複雑な判断が必要な場合
 
+### プロジェクトローカル設定
+
+プロジェクトごとに異なるチーム構成や設定を使いたい場合、プロジェクトルートに `.maxam/` ディレクトリを作成します：
+
+```
+your-project/
+├── .maxam/
+│   ├── config.yaml      # プロジェクト固有設定
+│   ├── CLAUDE.md        # プロジェクト固有の規約・学習事項
+│   └── agents/          # プロジェクト固有エージェント
+│       ├── pixel/
+│       │   └── CLAUDE.md
+│       └── chiptune/
+│           └── CLAUDE.md
+└── CLAUDE.md            # 共通規約
+```
+
+**優先順位:** `プロジェクト/.maxam/ > ~/.maxam/ > デフォルト`
+
+**例：ファミコン開発用チーム**
+
+```yaml
+# your-project/.maxam/config.yaml
+version: "1"
+default_agent: pixel
+agents:
+  - name: pixel
+    full_name: Pixel Artist
+    role: ドット絵担当
+  - name: chiptune
+    full_name: Chiptune Composer
+    role: サウンド担当
+  - name: asm
+    full_name: ASM Wizard
+    role: 6502アセンブラ担当
+```
+
+#### CLAUDE.local.md からの移行
+
+従来の `CLAUDE.local.md` は `.maxam/CLAUDE.md` に移行することを推奨します：
+
+```bash
+# 移行手順
+mkdir -p .maxam
+mv CLAUDE.local.md .maxam/CLAUDE.md
+```
+
+**メリット:**
+- MAXAM関連ファイルが `.maxam/` に集約される
+- プロジェクトルートがすっきりする
+- 「.maxamフォルダを見ればMAXAM設定が全部わかる」
+
+> **Note:** 後方互換性のため `CLAUDE.local.md` も引き続き読み込まれますが、将来のバージョンで廃止予定です。
+
 ### CLIコマンド
 
 ```bash
@@ -211,6 +265,17 @@ MAXAM/
 ├── logs/               # 実行ログ
 └── CLAUDE.md           # 共通規約
 ```
+
+### 設定ファイルの場所
+
+| 場所 | 用途 |
+|------|------|
+| `~/.maxam/config.yaml` | グローバル設定 |
+| `~/.maxam/agents/` | グローバルエージェント定義 |
+| `プロジェクト/.maxam/config.yaml` | プロジェクト固有設定（優先） |
+| `プロジェクト/.maxam/agents/` | プロジェクト固有エージェント（優先） |
+| `プロジェクト/.maxam/CLAUDE.md` | プロジェクト固有の規約・学習事項 |
+| `プロジェクト/CLAUDE.md` | 共通規約 |
 
 ## ワークフロー
 

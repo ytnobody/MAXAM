@@ -106,6 +106,21 @@ func AgentsDir() (string, error) {
 	return filepath.Join(configDir, "agents"), nil
 }
 
+// ProjectConfigDir returns the path to project/.maxam/
+func ProjectConfigDir(projectDir string) string {
+	return filepath.Join(projectDir, ".maxam")
+}
+
+// ProjectAgentsDir returns the path to project/.maxam/agents/
+func ProjectAgentsDir(projectDir string) string {
+	return filepath.Join(ProjectConfigDir(projectDir), "agents")
+}
+
+// ProjectClaudeMD returns the path to project/.maxam/CLAUDE.md
+func ProjectClaudeMD(projectDir string) string {
+	return filepath.Join(ProjectConfigDir(projectDir), "CLAUDE.md")
+}
+
 // Load reads configuration from ~/.maxam/config.yaml
 func Load() (*Config, error) {
 	configDir, err := ConfigDir()
@@ -128,6 +143,79 @@ func Load() (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// LoadWithProject loads configuration with project-local overrides
+// Priority: project/.maxam/config.yaml > ~/.maxam/config.yaml > default
+func LoadWithProject(projectDir string) (*Config, error) {
+	// 1. Start with global config
+	cfg, err := Load()
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Try to load project-local config
+	projectConfigPath := filepath.Join(ProjectConfigDir(projectDir), "config.yaml")
+	data, err := os.ReadFile(projectConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// No project config, return global
+			return cfg, nil
+		}
+		return nil, fmt.Errorf("read project config: %w", err)
+	}
+
+	var projectCfg Config
+	if err := yaml.Unmarshal(data, &projectCfg); err != nil {
+		return nil, fmt.Errorf("parse project config: %w", err)
+	}
+
+	// 3. Merge: project config overwrites global config
+	merged := mergeConfigs(cfg, &projectCfg)
+	return merged, nil
+}
+
+// mergeConfigs merges base and override configs
+// Override values take precedence when set
+func mergeConfigs(base, override *Config) *Config {
+	result := *base // Copy base
+
+	// Override version if set
+	if override.Version != "" {
+		result.Version = override.Version
+	}
+
+	// Override default agent if set
+	if override.DefaultAgent != "" {
+		result.DefaultAgent = override.DefaultAgent
+	}
+
+	// Override agents if specified (complete replacement)
+	if len(override.Agents) > 0 {
+		result.Agents = override.Agents
+	}
+
+	// Override analysis min messages if set
+	if override.AnalysisMinMessages > 0 {
+		result.AnalysisMinMessages = override.AnalysisMinMessages
+	}
+
+	// Override context mode if set
+	if override.ContextMode != "" {
+		result.ContextMode = override.ContextMode
+	}
+
+	// Override YOLO mode (explicit true takes precedence)
+	if override.YOLOMode {
+		result.YOLOMode = true
+	}
+
+	// Override workers per agent if set
+	if override.WorkersPerAgent > 0 {
+		result.WorkersPerAgent = override.WorkersPerAgent
+	}
+
+	return &result
 }
 
 // Save writes configuration to ~/.maxam/config.yaml
