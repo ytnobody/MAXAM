@@ -124,6 +124,7 @@ type tuiModel struct {
 	history        *history.History
 	workDir        string
 	projectContext string
+	config         *config.Config // config for agent colors
 
 	viewport          viewport.Model
 	textInput         textinput.Model
@@ -235,7 +236,7 @@ func initialTuiModel(workDir string) tuiModel {
 	ccClient := ccusage.NewClient()
 
 	// Setup agent router
-	cfg, err := config.Load()
+	cfg, err := config.LoadWithProject(workDir)
 	if err != nil {
 		cfg = config.DefaultConfig()
 	}
@@ -259,6 +260,7 @@ func initialTuiModel(workDir string) tuiModel {
 		logMgr:              logger.NewManager(logger.GetDefaultLogDir(), workDir),
 		history:             hist,
 		workDir:             workDir,
+		config:              cfg,
 		textInput:           ti,
 		messages:            messages,
 		inputHist:           make([]string, 0),
@@ -813,7 +815,7 @@ func (m *tuiModel) updateViewport() {
 			sb.WriteString(userStyle.Render("You: "))
 			sb.WriteString(msg.content)
 		} else {
-			style := getAgentStyle(msg.role)
+			style := m.getAgentStyle(msg.role)
 			sb.WriteString(style.Render(getTuiFullName(msg.role) + ": "))
 			sb.WriteString(msg.content)
 		}
@@ -1172,7 +1174,18 @@ func getTuiFullName(name string) string {
 	}
 }
 
-func getAgentStyle(name string) lipgloss.Style {
+// getAgentStyle returns the style for an agent based on config color
+func (m *tuiModel) getAgentStyle(name string) lipgloss.Style {
+	// Try to get color from config
+	if m.config != nil {
+		if color := m.config.GetAgentColor(name); color != "" {
+			return lipgloss.NewStyle().
+				Foreground(lipgloss.Color(color)).
+				Bold(true)
+		}
+	}
+
+	// Fallback to hardcoded colors for backwards compatibility
 	switch name {
 	case "mei":
 		return meiStyle

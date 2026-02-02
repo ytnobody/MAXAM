@@ -609,3 +609,81 @@ func TestGetAgentDirWithProject(t *testing.T) {
 		t.Errorf("GetAgentDirWithProject(yuki) = %q, want %q", dir, projectAgentDir)
 	}
 }
+
+func TestAgentConfigColor(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   AgentConfig
+		hasColor bool
+		color    string
+	}{
+		{
+			name:     "色未指定",
+			config:   AgentConfig{Name: "test", FullName: "Test Agent", Role: "test"},
+			hasColor: false,
+		},
+		{
+			name:     "色指定あり",
+			config:   AgentConfig{Name: "test", FullName: "Test Agent", Role: "test", Color: "#FF9933"},
+			hasColor: true,
+			color:    "#FF9933",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.hasColor && tt.config.Color != tt.color {
+				t.Errorf("Color = %q, want %q", tt.config.Color, tt.color)
+			}
+			if !tt.hasColor && tt.config.Color != "" {
+				t.Error("Expected color to be empty")
+			}
+		})
+	}
+}
+
+func TestGetAgentColor(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "mei", Color: "#FFB7C5"},
+			{Name: "yuki", Color: "#87CEEB"},
+			{Name: "priya", Color: ""},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		agent    string
+		expected string
+	}{
+		{
+			name:     "色が設定されているエージェント",
+			agent:    "mei",
+			expected: "#FFB7C5",
+		},
+		{
+			name:     "別の色が設定されているエージェント",
+			agent:    "yuki",
+			expected: "#87CEEB",
+		},
+		{
+			name:     "色が空のエージェント",
+			agent:    "priya",
+			expected: "",
+		},
+		{
+			name:     "存在しないエージェント",
+			agent:    "unknown",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cfg.GetAgentColor(tt.agent)
+			if got != tt.expected {
+				t.Errorf("GetAgentColor(%q) = %q, want %q", tt.agent, got, tt.expected)
+			}
+		})
+	}
+}

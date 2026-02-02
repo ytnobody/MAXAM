@@ -34,6 +34,7 @@ type AgentConfig struct {
 	FullName string `yaml:"full_name"`
 	Role     string `yaml:"role"`
 	Model    string `yaml:"model,omitempty"` // opus, sonnet, haiku
+	Color    string `yaml:"color,omitempty"` // hex color code (e.g., "#FF9933")
 }
 
 // DefaultAnalysisMinMessages is the default minimum message count for analysis
@@ -281,4 +282,15 @@ func LoadProjectConfig(projectDir string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// GetAgentColor returns the color for the specified agent
+// Returns empty string if not found or not set
+func (c *Config) GetAgentColor(name string) string {
+	for _, agent := range c.Agents {
+		if agent.Name == name {
+			return agent.Color
+		}
+	}
+	return ""
 }
