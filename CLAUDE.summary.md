@@ -6,7 +6,7 @@ MAXAMは複数のAIエージェントが協調して開発業務を遂行する�
 
 ## チームメンバー
 
-チームメンバー情報は `CLAUDE.local.md` で管理されます。
+チームメンバー情報は `.maxam/CLAUDE.md` で管理されます。
 
 ## コーディング規約
 
@@ -77,4 +77,4 @@ type: feat, fix, refactor, docs, test, chore
 
 ---
 
-*詳細はCLAUDE.md（フル版）を参照。チーム固有情報はCLAUDE.local.mdを参照*
+*詳細はCLAUDE.md（フル版）を参照。チーム固有情報は.maxam/CLAUDE.mdを参照*
