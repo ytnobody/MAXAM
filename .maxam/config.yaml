@@ -1,21 +1,21 @@
 version: "1"
-default_agent: mei chen
+default_agent: mei
 agents:
-    - name: mei chen
+    - name: mei
       full_name: mei chen
       role: PM + アーキテクト
-    - name: yuki tanaka
+    - name: yuki
       full_name: yuki tanaka
       role: バックエンド + インフラ
-    - name: rin sato
+    - name: rin
       full_name: rin sato
       role: フロントエンド + バックエンド
-    - name: shiori tanaka
+    - name: shiori
       full_name: shiori tanaka
       role: テスト + ドキュメント
-    - name: priya sharma
+    - name: priya
       full_name: priya sharma
       role: レビュー + セキュリティ + QA
-    - name: amara okonkwo
+    - name: amara
       full_name: amara okonkwo
       role: 分析 + 法的基礎知識
