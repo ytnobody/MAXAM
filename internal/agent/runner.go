@@ -303,32 +303,11 @@ func (a *Agents) Get(name string) (*Runner, bool) {
 	return r, ok
 }
 
-// Yuki returns the implementation agent
-func (a *Agents) Yuki() *Runner {
-	return a.runners["yuki"]
-}
-
-// Priya returns the review agent
-func (a *Agents) Priya() *Runner {
-	return a.runners["priya"]
-}
-
-// Mei returns the PM agent
-func (a *Agents) Mei() *Runner {
-	return a.runners["mei"]
-}
-
-// Amara returns the analysis agent
-func (a *Agents) Amara() *Runner {
-	return a.runners["amara"]
-}
-
-// Rin returns the frontend agent
-func (a *Agents) Rin() *Runner {
-	return a.runners["rin"]
-}
-
-// Shiori returns the test/docs agent
-func (a *Agents) Shiori() *Runner {
-	return a.runners["shiori"]
+// All returns all configured runner names
+func (a *Agents) All() []string {
+	names := make([]string, 0, len(a.runners))
+	for name := range a.runners {
+		names = append(names, name)
+	}
+	return names
 }

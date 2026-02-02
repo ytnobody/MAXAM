@@ -55,8 +55,14 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 		History: make([]ReviewRound, 0),
 	}
 
-	yuki := rc.agents.Yuki()
-	priya := rc.agents.Priya()
+	yuki, ok := rc.agents.Get("yuki")
+	if !ok {
+		return nil, fmt.Errorf("yuki agent not found")
+	}
+	priya, ok := rc.agents.Get("priya")
+	if !ok {
+		return nil, fmt.Errorf("priya agent not found")
+	}
 
 	currentTask := task
 

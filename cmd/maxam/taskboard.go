@@ -265,7 +265,11 @@ func runTaskImpl() {
 	fmt.Printf("Task: %s\n\n", task)
 
 	agents := agent.NewAgents(workDir)
-	yuki := agents.Yuki()
+	yuki, ok := agents.Get("yuki")
+	if !ok {
+		fmt.Fprintln(os.Stderr, "Error: yuki agent not found")
+		os.Exit(1)
+	}
 
 	ctx := context.Background()
 	fmt.Println("[Yuki] Working on it...")
