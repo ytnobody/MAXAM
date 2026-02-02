@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
+	"github.com/ytnobody/MAXAM/internal/config"
 	"github.com/ytnobody/MAXAM/internal/logger"
 	"github.com/ytnobody/MAXAM/internal/member"
 )
@@ -30,12 +31,23 @@ type chatMessage struct {
 func runChat() {
 	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "Usage: maxam chat <agent>")
-		fmt.Fprintln(os.Stderr, "Agents: mei, yuki, rin, shiori, priya, amara, team")
+		fmt.Fprintln(os.Stderr, "Agents: (run 'maxam team list' to see configured agents)")
 		os.Exit(1)
 	}
 
 	agentName := strings.ToLower(os.Args[2])
 	workDir := getWorkDir()
+
+	// Check if agents are configured
+	cfg, err := config.LoadWithProject(workDir)
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+	if !cfg.HasAgents() {
+		fmt.Fprintln(os.Stderr, "No team members configured.")
+		fmt.Fprintln(os.Stderr, "Please run 'maxam team init' first to set up your team.")
+		os.Exit(1)
+	}
 
 	session := &ChatSession{
 		agents:  agent.NewAgents(workDir),

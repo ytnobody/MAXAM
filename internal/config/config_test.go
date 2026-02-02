@@ -11,11 +11,45 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Version != "1" {
 		t.Errorf("Version = %q, want %q", cfg.Version, "1")
 	}
-	if len(cfg.Agents) != 6 {
-		t.Errorf("Agents count = %d, want 6", len(cfg.Agents))
+	// DefaultConfig now returns empty agents (use 'maxam team init' to configure)
+	if len(cfg.Agents) != 0 {
+		t.Errorf("Agents count = %d, want 0 (empty by default)", len(cfg.Agents))
 	}
 	if cfg.AnalysisMinMessages != DefaultAnalysisMinMessages {
 		t.Errorf("AnalysisMinMessages = %d, want %d", cfg.AnalysisMinMessages, DefaultAnalysisMinMessages)
+	}
+}
+
+func TestHasAgents(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		expected bool
+	}{
+		{
+			name:     "空の設定",
+			cfg:      DefaultConfig(),
+			expected: false,
+		},
+		{
+			name:     "エージェントあり",
+			cfg:      &Config{Agents: []AgentConfig{{Name: "test", FullName: "Test", Role: "Test"}}},
+			expected: true,
+		},
+		{
+			name:     "空のエージェントリスト",
+			cfg:      &Config{Agents: []AgentConfig{}},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.HasAgents()
+			if got != tt.expected {
+				t.Errorf("HasAgents() = %v, want %v", got, tt.expected)
+			}
+		})
 	}
 }
 
