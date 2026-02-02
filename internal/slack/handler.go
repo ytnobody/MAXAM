@@ -19,6 +19,7 @@ type Handler struct {
 	members      *member.Members
 	logMgr       *logger.Manager
 	defaultAgent string
+	teamName     string
 }
 
 // NewHandler creates a new Slack message handler
@@ -34,6 +35,7 @@ func NewHandler(client *Client, agents *agent.Agents, logMgr *logger.Manager, wo
 		members:      members,
 		logMgr:       logMgr,
 		defaultAgent: cfg.DefaultAgent,
+		teamName:     cfg.GetTeamName(),
 	}
 }
 
@@ -179,7 +181,7 @@ func (h *Handler) handleMeiDefault(ctx context.Context, customerInput string) (s
 	}
 
 	fullName := h.members.GetFullName(defaultAgentName)
-	prompt := fmt.Sprintf(`あなたはMAXAMチームのPM、%sです。
+	prompt := fmt.Sprintf(`あなたは%sのPM、%sです。
 顧客からの問い合わせに対応してください。
 
 %s
@@ -189,7 +191,7 @@ func (h *Handler) handleMeiDefault(ctx context.Context, customerInput string) (s
 2. 必要であれば、チームへの指示
 
 顧客への返答は「## 返答」セクションに書いてください。
-チームへの指示がある場合は「## チーム指示」セクションに書いてください。`, fullName, customerInput)
+チームへの指示がある場合は「## チーム指示」セクションに書いてください。`, h.teamName, fullName, customerInput)
 
 	result, err := defaultAgent.Run(ctx, prompt)
 	return result, fullName, err

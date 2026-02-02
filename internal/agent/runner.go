@@ -303,6 +303,21 @@ func (a *Agents) Get(name string) (*Runner, bool) {
 	return r, ok
 }
 
+// GetByRole returns the first runner with the specified role
+func (a *Agents) GetByRole(role string) (*Runner, bool) {
+	cfg, err := config.LoadWithProject(a.workDir)
+	if err != nil {
+		return nil, false
+	}
+
+	agentCfg := cfg.GetAgentByRole(role)
+	if agentCfg == nil {
+		return nil, false
+	}
+
+	return a.Get(agentCfg.Name)
+}
+
 // All returns all configured runner names
 func (a *Agents) All() []string {
 	names := make([]string, 0, len(a.runners))

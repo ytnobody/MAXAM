@@ -265,22 +265,22 @@ func runTaskImpl() {
 	fmt.Printf("Task: %s\n\n", task)
 
 	agents := agent.NewAgents(workDir)
-	yuki, ok := agents.Get("yuki")
+	developer, ok := agents.GetByRole("developer")
 	if !ok {
-		fmt.Fprintln(os.Stderr, "Error: yuki agent not found")
+		fmt.Fprintln(os.Stderr, "Error: no agent with 'developer' role found")
 		os.Exit(1)
 	}
 
 	ctx := context.Background()
-	fmt.Println("[Yuki] Working on it...")
+	fmt.Printf("[%s] Working on it...\n", developer.Name)
 
-	result, err := yuki.Run(ctx, task)
+	result, err := developer.Run(ctx, task)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("\n[Yuki] Done.")
+	fmt.Printf("\n[%s] Done.\n", developer.Name)
 	fmt.Println("\n--- Output ---")
 	fmt.Println(result)
 }
