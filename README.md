@@ -110,7 +110,20 @@ make build
 
 ### 設定ファイル
 
-`~/.maxam/config.yaml` で動作をカスタマイズできます：
+設定ファイルは以下の順序で検索されます：
+
+1. **`.maxam/config.yaml`** - プロジェクトローカル（優先）
+2. **`~/.maxam/config.yaml`** - ユーザーグローバル
+
+プロジェクトごとに設定を変えたい場合は、リポジトリ直下に`.maxam/`ディレクトリを作成してください。
+
+```bash
+# プロジェクトローカル設定の作成
+mkdir -p .maxam
+cp ~/.maxam/config.yaml .maxam/config.yaml
+```
+
+設定例：
 
 ```yaml
 # コンテキストモード: full（デフォルト）または summary
