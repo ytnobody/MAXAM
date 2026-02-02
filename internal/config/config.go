@@ -20,6 +20,7 @@ const (
 // Config represents the MAXAM configuration
 type Config struct {
 	Version             string        `yaml:"version"`
+	TeamName            string        `yaml:"team_name,omitempty"`
 	DefaultAgent        string        `yaml:"default_agent,omitempty"`
 	Agents              []AgentConfig `yaml:"agents"`
 	AnalysisMinMessages int           `yaml:"analysis_min_messages,omitempty"`
@@ -293,4 +294,34 @@ func (c *Config) GetAgentColor(name string) string {
 		}
 	}
 	return ""
+}
+
+// GetAgentByRole returns the first agent with the specified role
+// Returns nil if no agent with the role is found
+func (c *Config) GetAgentByRole(role string) *AgentConfig {
+	for i := range c.Agents {
+		if c.Agents[i].Role == role {
+			return &c.Agents[i]
+		}
+	}
+	return nil
+}
+
+// GetAgentsByRole returns all agents with the specified role
+func (c *Config) GetAgentsByRole(role string) []AgentConfig {
+	var result []AgentConfig
+	for _, agent := range c.Agents {
+		if agent.Role == role {
+			result = append(result, agent)
+		}
+	}
+	return result
+}
+
+// GetTeamName returns the team name with default fallback
+func (c *Config) GetTeamName() string {
+	if c.TeamName == "" {
+		return "Team"
+	}
+	return c.TeamName
 }

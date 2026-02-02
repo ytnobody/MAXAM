@@ -54,8 +54,11 @@ func (ac *AnalysisCycle) Run(ctx context.Context) (*AnalysisResult, error) {
 	// Build analysis prompt
 	prompt := ac.buildAnalysisPrompt(logsContent, claudeMDs)
 
-	// Run Amara
-	amara := ac.agents.Amara()
+	// Run Amara (or first available analysis agent)
+	amara, ok := ac.agents.Get("amara")
+	if !ok {
+		return nil, fmt.Errorf("amara agent not found")
+	}
 	start := time.Now()
 	result, err := amara.Run(ctx, prompt)
 	elapsed := time.Since(start)
@@ -81,8 +84,8 @@ func (ac *AnalysisCycle) collectLogs() (string, error) {
 	logsDir := filepath.Join(logger.GetDefaultLogDir(), projectName)
 	var content strings.Builder
 
-	agents := []string{"mei", "yuki", "priya", "amara"}
-	for _, agentName := range agents {
+	// Get all configured agents from runners
+	for _, agentName := range ac.agents.All() {
 		agentDir := filepath.Join(logsDir, agentName)
 		files, err := os.ReadDir(agentDir)
 		if err != nil {
@@ -129,8 +132,7 @@ func (ac *AnalysisCycle) collectCLAUDEMDs() (map[string]string, error) {
 	}
 
 	// Agent-specific CLAUDE.md
-	agents := []string{"mei", "yuki", "priya", "amara"}
-	for _, agentName := range agents {
+	for _, agentName := range ac.agents.All() {
 		path := filepath.Join(ac.workDir, "agents", agentName, "CLAUDE.md")
 		if data, err := os.ReadFile(path); err == nil {
 			result[agentName] = string(data)

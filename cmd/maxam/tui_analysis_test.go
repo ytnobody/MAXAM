@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ytnobody/MAXAM/internal/config"
 )
 
 func TestIsNoIssueResponse(t *testing.T) {
@@ -148,6 +150,19 @@ func TestFindGitRepos(t *testing.T) {
 }
 
 func TestDetectAgentMentions(t *testing.T) {
+	// テスト用のtuiModelを作成（設定付き）
+	testConfig := &config.Config{
+		Agents: []config.AgentConfig{
+			{Name: "mei", Role: "PM"},
+			{Name: "yuki", Role: "実装"},
+			{Name: "priya", Role: "レビュー"},
+			{Name: "amara", Role: "分析"},
+			{Name: "rin", Role: "フロントエンド"},
+			{Name: "shiori", Role: "テスト"},
+		},
+	}
+	m := &tuiModel{config: testConfig}
+
 	tests := []struct {
 		name         string
 		text         string
@@ -185,8 +200,8 @@ func TestDetectAgentMentions(t *testing.T) {
 			want:         []string{},
 		},
 		{
-			name:         "日本語パターン ゆきさん",
-			text:         "ゆきさんにお願いしますね",
+			name:         "日本語パターン yukiさん",
+			text:         "yukiさんにお願いしますね",
 			currentAgent: "mei",
 			want:         []string{"yuki"},
 		},
@@ -206,7 +221,7 @@ func TestDetectAgentMentions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := detectAgentMentions(tt.text, tt.currentAgent)
+			got := m.detectAgentMentions(tt.text, tt.currentAgent)
 			if len(got) != len(tt.want) {
 				t.Errorf("detectAgentMentions(%q, %q) = %v, want %v", tt.text, tt.currentAgent, got, tt.want)
 				return

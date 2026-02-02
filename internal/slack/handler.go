@@ -7,22 +7,35 @@ import (
 	"time"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
+	"github.com/ytnobody/MAXAM/internal/config"
 	"github.com/ytnobody/MAXAM/internal/logger"
+	"github.com/ytnobody/MAXAM/internal/member"
 )
 
 // Handler processes Slack messages with the AI team
 type Handler struct {
-	client *Client
-	agents *agent.Agents
-	logMgr *logger.Manager
+	client       *Client
+	agents       *agent.Agents
+	members      *member.Members
+	logMgr       *logger.Manager
+	defaultAgent string
+	teamName     string
 }
 
 // NewHandler creates a new Slack message handler
-func NewHandler(client *Client, agents *agent.Agents, logMgr *logger.Manager) *Handler {
+func NewHandler(client *Client, agents *agent.Agents, logMgr *logger.Manager, workDir string) *Handler {
+	members := member.NewMembers(workDir)
+	cfg, err := config.LoadWithProject(workDir)
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
 	return &Handler{
-		client: client,
-		agents: agents,
-		logMgr: logMgr,
+		client:       client,
+		agents:       agents,
+		members:      members,
+		logMgr:       logMgr,
+		defaultAgent: cfg.DefaultAgent,
+		teamName:     cfg.GetTeamName(),
 	}
 }
 
@@ -102,13 +115,17 @@ func (h *Handler) handleChannelMessages(channel string, msgs []*IncomingMessage)
 		// Direct response from mentioned agent
 		h.client.PostMessageAsAgent(channel, agentName, result, threadTS)
 	} else {
-		// Mei's structured response
+		// Default agent's structured response
 		response := parseResponse(result)
+		defaultAgentFullName := h.members.GetFullName(h.defaultAgent)
+		if defaultAgentFullName == "" {
+			defaultAgentFullName = h.members.GetFullName("mei")
+		}
 		if response.CustomerReply != "" {
-			h.client.PostMessageAsAgent(channel, "Mei Chen", response.CustomerReply, threadTS)
+			h.client.PostMessageAsAgent(channel, defaultAgentFullName, response.CustomerReply, threadTS)
 		}
 		if response.TeamInstruction != "" {
-			h.handleTeamInstruction(response.TeamInstruction, channel, threadTS)
+			h.handleTeamInstruction(response.TeamInstruction, channel, threadTS, defaultAgentFullName)
 		}
 	}
 }
@@ -118,18 +135,12 @@ func (h *Handler) detectAgentMention(msgs []*IncomingMessage) string {
 	for _, msg := range msgs {
 		text := strings.ToLower(msg.Text)
 
-		// Check for @mentions or name mentions
-		if strings.Contains(text, "@yuki") || strings.Contains(text, "ゆき") {
-			return "yuki"
-		}
-		if strings.Contains(text, "@priya") || strings.Contains(text, "プリヤ") {
-			return "priya"
-		}
-		if strings.Contains(text, "@amara") || strings.Contains(text, "アマラ") {
-			return "amara"
-		}
-		if strings.Contains(text, "@mei") || strings.Contains(text, "メイ") {
-			return "mei"
+		// Check all configured agents for @mentions
+		for _, m := range h.members.All() {
+			name := strings.ToLower(m.Name)
+			if strings.Contains(text, "@"+name) {
+				return name
+			}
 		}
 	}
 	return ""
@@ -137,48 +148,53 @@ func (h *Handler) detectAgentMention(msgs []*IncomingMessage) string {
 
 // handleDirectMention handles a message directed at a specific agent
 func (h *Handler) handleDirectMention(ctx context.Context, agentName, input string) (string, string, error) {
-	var runner *agent.Runner
-	var fullName string
-
-	switch agentName {
-	case "yuki":
-		runner = h.agents.Yuki()
-		fullName = "Yuki Tanaka"
-	case "priya":
-		runner = h.agents.Priya()
-		fullName = "Priya Sharma"
-	case "amara":
-		runner = h.agents.Amara()
-		fullName = "Amara Okonkwo"
-	case "mei":
-		runner = h.agents.Mei()
-		fullName = "Mei Chen"
-	default:
-		runner = h.agents.Mei()
-		fullName = "Mei Chen"
+	runner, ok := h.agents.Get(agentName)
+	if !ok {
+		// Fallback to default agent
+		fallback := h.defaultAgent
+		if fallback == "" {
+			fallback = "mei" // last resort fallback
+		}
+		runner, ok = h.agents.Get(fallback)
+		if !ok {
+			return "", "", fmt.Errorf("agent %s not found", agentName)
+		}
+		agentName = fallback
 	}
 
+	fullName := h.members.GetFullName(agentName)
 	result, err := runner.Run(ctx, input)
 	return result, fullName, err
 }
 
 // handleMeiDefault handles messages through Mei (default behavior)
 func (h *Handler) handleMeiDefault(ctx context.Context, customerInput string) (string, string, error) {
-	mei := h.agents.Mei()
-	prompt := fmt.Sprintf(`あなたはMAXAMチームのPM、Mei Chenです。
+	// Use default agent (fallback to "mei" if not configured)
+	defaultAgentName := h.defaultAgent
+	if defaultAgentName == "" {
+		defaultAgentName = "mei"
+	}
+
+	defaultAgent, ok := h.agents.Get(defaultAgentName)
+	if !ok {
+		return "", "", fmt.Errorf("default agent %s not found", defaultAgentName)
+	}
+
+	fullName := h.members.GetFullName(defaultAgentName)
+	prompt := fmt.Sprintf(`あなたは%sのPM、%sです。
 顧客からの問い合わせに対応してください。
 
 %s
 
 以下の形式で回答してください:
 1. 顧客への返答（日本語で丁寧に）
-2. 必要であれば、チームへの指示（Yukiへの実装依頼など）
+2. 必要であれば、チームへの指示
 
 顧客への返答は「## 返答」セクションに書いてください。
-チームへの指示がある場合は「## チーム指示」セクションに書いてください。`, customerInput)
+チームへの指示がある場合は「## チーム指示」セクションに書いてください。`, h.teamName, fullName, customerInput)
 
-	result, err := mei.Run(ctx, prompt)
-	return result, "Mei Chen", err
+	result, err := defaultAgent.Run(ctx, prompt)
+	return result, fullName, err
 }
 
 type parsedResponse struct {
@@ -236,17 +252,23 @@ func saveSection(resp *parsedResponse, section, content string) {
 	}
 }
 
-func (h *Handler) handleTeamInstruction(instruction string, channel, threadTS string) {
-	// Check if it's for Yuki (implementation)
+func (h *Handler) handleTeamInstruction(instruction string, channel, threadTS, senderFullName string) {
 	instructionLower := strings.ToLower(instruction)
 
-	if strings.Contains(instructionLower, "yuki") ||
-		strings.Contains(instructionLower, "実装") ||
-		strings.Contains(instructionLower, "implement") {
+	// Check if instruction mentions any configured agent by name
+	for _, m := range h.members.All() {
+		if strings.Contains(instructionLower, strings.ToLower(m.Name)) {
+			h.client.PostMessageAsAgent(channel, senderFullName,
+				fmt.Sprintf("%sに依頼しました。完了次第お知らせします。", m.FullName),
+				threadTS)
+			return
+		}
+	}
 
-		// Notify in Slack
-		h.client.PostMessageAsAgent(channel, "Mei Chen",
-			"Yukiに実装を依頼しました。完了次第お知らせします。",
+	// Check for implementation-related keywords
+	if strings.Contains(instructionLower, "実装") || strings.Contains(instructionLower, "implement") {
+		h.client.PostMessageAsAgent(channel, senderFullName,
+			"実装を依頼しました。完了次第お知らせします。",
 			threadTS)
 	}
 }

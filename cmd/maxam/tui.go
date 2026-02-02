@@ -20,6 +20,7 @@ import (
 	gh "github.com/ytnobody/MAXAM/internal/github"
 	"github.com/ytnobody/MAXAM/internal/history"
 	"github.com/ytnobody/MAXAM/internal/logger"
+	"github.com/ytnobody/MAXAM/internal/member"
 	"github.com/ytnobody/MAXAM/internal/mention"
 	"github.com/ytnobody/MAXAM/internal/router"
 	"github.com/ytnobody/MAXAM/internal/taskboard"
@@ -119,6 +120,7 @@ const (
 
 type tuiModel struct {
 	agents         *agent.Agents
+	members        *member.Members
 	router         *router.Router
 	logMgr         *logger.Manager
 	history        *history.History
@@ -254,8 +256,11 @@ func initialTuiModel(workDir string) tuiModel {
 	// Setup mention checker with agent names from config
 	mention.SetDefaultChecker(mention.NewChecker(agentNames))
 
+	members := member.NewMembers(workDir)
+
 	return tuiModel{
 		agents:              agent.NewAgents(workDir),
+		members:             members,
 		router:              agentRouter,
 		logMgr:              logger.NewManager(logger.GetDefaultLogDir(), workDir),
 		history:             hist,
@@ -726,7 +731,7 @@ func (m *tuiModel) runAgentAsync(input string, targetAgent string, depth int) te
 		// 返答内の他エージェントへのメンションを検出（複数対応）
 		var nextAgents []string
 		if depth < maxChainDepth && err == nil {
-			nextAgents = detectAgentMentions(result, agentName)
+			nextAgents = m.detectAgentMentions(result, agentName)
 		}
 
 		return agentResponseMsg{
@@ -761,7 +766,7 @@ func (m *tuiModel) buildMeiInterventionPrompt() string {
 		if msg.role == "user" {
 			sb.WriteString(fmt.Sprintf("オーナー: %s\n\n", msg.content))
 		} else {
-			sb.WriteString(fmt.Sprintf("%s: %s\n\n", getTuiFullName(msg.role), msg.content))
+			sb.WriteString(fmt.Sprintf("%s: %s\n\n", m.getFullName(msg.role), msg.content))
 		}
 	}
 
@@ -769,36 +774,37 @@ func (m *tuiModel) buildMeiInterventionPrompt() string {
 }
 
 // detectAgentMentions は返答内の他エージェントへのメンションを複数検出
-func detectAgentMentions(text string, currentAgent string) []string {
+// 設定から動的にエージェント名を取得
+func (m *tuiModel) detectAgentMentions(text string, currentAgent string) []string {
 	lower := strings.ToLower(text)
-
-	// 他のエージェントへの呼びかけパターンを検出
-	agentPatterns := []struct {
-		name     string
-		patterns []string
-	}{
-		{"yuki", []string{"@yuki", "yuki、", "yuki,", "ゆき、", "ゆき,", "yukiさん", "ゆきさん", "yukiに", "ゆきに", "yukiお願い", "ゆきお願い"}},
-		{"priya", []string{"@priya", "priya、", "priya,", "プリヤ、", "プリヤ,", "priyaさん", "プリヤさん", "priyaに", "プリヤに", "priyaお願い", "プリヤお願い", "レビューお願い", "チェックお願い"}},
-		{"amara", []string{"@amara", "amara、", "amara,", "アマラ、", "アマラ,", "amaraさん", "アマラさん", "amaraに", "アマラに", "amaraお願い", "アマラお願い", "分析お願い"}},
-		{"mei", []string{"@mei", "mei、", "mei,", "メイ、", "メイ,", "meiさん", "メイさん", "meiに", "メイに", "meiお願い", "メイお願い"}},
-		{"rin", []string{"@rin", "rin、", "rin,", "りん、", "りん,", "rinさん", "りんさん", "rinに", "りんに", "rinお願い", "りんお願い"}},
-		{"shiori", []string{"@shiori", "shiori、", "shiori,", "しおり、", "しおり,", "shioriさん", "しおりさん", "shioriに", "しおりに", "shioriお願い", "しおりお願い"}},
-	}
 
 	var result []string
 	seen := make(map[string]bool)
 
-	for _, a := range agentPatterns {
-		if a.name == currentAgent {
+	// 設定からエージェント名を取得して動的にパターン生成
+	for _, agentCfg := range m.config.Agents {
+		name := strings.ToLower(agentCfg.Name)
+		if name == currentAgent {
 			continue // 自分自身へのメンションは無視
 		}
-		if seen[a.name] {
+		if seen[name] {
 			continue // 重複は除外
 		}
-		for _, pattern := range a.patterns {
+
+		// @name、name、、name,などのパターンをチェック
+		patterns := []string{
+			"@" + name,
+			name + "、",
+			name + ",",
+			name + "さん",
+			name + "に",
+			name + "お願い",
+		}
+
+		for _, pattern := range patterns {
 			if strings.Contains(lower, pattern) {
-				result = append(result, a.name)
-				seen[a.name] = true
+				result = append(result, name)
+				seen[name] = true
 				break
 			}
 		}
@@ -816,7 +822,7 @@ func (m *tuiModel) updateViewport() {
 			sb.WriteString(msg.content)
 		} else {
 			style := m.getAgentStyle(msg.role)
-			sb.WriteString(style.Render(getTuiFullName(msg.role) + ": "))
+			sb.WriteString(style.Render(m.getFullName(msg.role) + ": "))
 			sb.WriteString(msg.content)
 		}
 		sb.WriteString("\n\n")
@@ -826,7 +832,7 @@ func (m *tuiModel) updateViewport() {
 	if len(m.processingAgents) > 0 {
 		var names []string
 		for name := range m.processingAgents {
-			names = append(names, getTuiFullName(name))
+			names = append(names, m.getFullName(name))
 		}
 		sb.WriteString(helpStyle.Render(fmt.Sprintf("%s が考え中...", strings.Join(names, ", "))))
 	}
@@ -871,7 +877,7 @@ func (m tuiModel) View() string {
 		if len(m.processingAgents) > 0 {
 			var names []string
 			for name := range m.processingAgents {
-				names = append(names, getTuiFullName(name))
+				names = append(names, m.members.GetFullName(name))
 			}
 			statusContent = statusStyle.Render(fmt.Sprintf(" %s 処理中... ", strings.Join(names, ", ")))
 		} else {
@@ -928,10 +934,15 @@ func (m *tuiModel) buildPrompt(agentName, input string) string {
 
 	sb.WriteString("これはチームチャットです。オーナーやチームメンバーと自然に会話してください。\n\n")
 	sb.WriteString("チームメンバー:\n")
-	sb.WriteString("- Mei: PM/要件定義（デフォルト応答者）\n")
-	sb.WriteString("- Yuki: 実装/インフラ\n")
-	sb.WriteString("- Priya: レビュー/QA\n")
-	sb.WriteString("- Amara: 分析\n\n")
+	// 設定からチームメンバーを動的に生成
+	for i, agentCfg := range m.config.Agents {
+		marker := ""
+		if m.config.DefaultAgent == agentCfg.Name || (m.config.DefaultAgent == "" && i == 0) {
+			marker = "（デフォルト応答者）"
+		}
+		sb.WriteString(fmt.Sprintf("- %s: %s%s\n", m.members.GetFullName(agentCfg.Name), agentCfg.Role, marker))
+	}
+	sb.WriteString("\n")
 	sb.WriteString("重要:\n")
 	if m.yoloMode {
 		// YOLOモード: 確認をスキップして進める
@@ -967,7 +978,7 @@ func (m *tuiModel) buildPrompt(agentName, input string) string {
 			if msg.role == "user" {
 				sb.WriteString(fmt.Sprintf("オーナー: %s\n\n", msg.content))
 			} else {
-				sb.WriteString(fmt.Sprintf("%s: %s\n\n", getTuiFullName(msg.role), msg.content))
+				sb.WriteString(fmt.Sprintf("%s: %s\n\n", m.getFullName(msg.role), msg.content))
 			}
 		}
 	}
@@ -980,7 +991,7 @@ func (m *tuiModel) buildPrompt(agentName, input string) string {
 		lastRole = m.messages[len(m.messages)-1].role
 	}
 	if lastRole != "user" {
-		sb.WriteString(fmt.Sprintf("%s からあなたへ: %s\n", getTuiFullName(lastRole), input))
+		sb.WriteString(fmt.Sprintf("%s からあなたへ: %s\n", m.getFullName(lastRole), input))
 	} else {
 		sb.WriteString(fmt.Sprintf("オーナー: %s\n", input))
 	}
@@ -1155,23 +1166,9 @@ func (m *tuiModel) analyzeProject() {
 	m.projectContext = sb.String()
 }
 
-func getTuiFullName(name string) string {
-	switch name {
-	case "mei":
-		return "Mei"
-	case "yuki":
-		return "Yuki"
-	case "priya":
-		return "Priya"
-	case "amara":
-		return "Amara"
-	case "rin":
-		return "Rin"
-	case "shiori":
-		return "Shiori"
-	default:
-		return name
-	}
+// getFullName は設定からエージェントのフルネームを取得
+func (m *tuiModel) getFullName(name string) string {
+	return m.members.GetFullName(name)
 }
 
 // getAgentStyle returns the style for an agent based on config color
@@ -1316,7 +1313,7 @@ func (m *tuiModel) buildLightweightAnalysisPrompt(messages []tuiMessage) string 
 		if msg.role == "user" {
 			sb.WriteString(fmt.Sprintf("オーナー: %s\n", msg.content))
 		} else {
-			sb.WriteString(fmt.Sprintf("%s: %s\n", getTuiFullName(msg.role), msg.content))
+			sb.WriteString(fmt.Sprintf("%s: %s\n", m.getFullName(msg.role), msg.content))
 		}
 	}
 

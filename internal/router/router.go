@@ -56,8 +56,12 @@ func (r *Router) Route(message string) []string {
 		return []string{r.defaultAgent}
 	}
 
-	// Fallback to mei if no default configured
-	return []string{"mei"}
+	// Fallback to first configured agent if no default
+	if len(r.agents) > 0 {
+		return []string{strings.ToLower(r.agents[0].Name)}
+	}
+
+	return nil
 }
 
 // extractMentions finds all @mentions in the message and returns valid agent names

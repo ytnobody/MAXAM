@@ -687,3 +687,139 @@ func TestGetAgentColor(t *testing.T) {
 		})
 	}
 }
+
+func TestGetAgentByRole(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "dev1", FullName: "Developer One", Role: "developer"},
+			{Name: "dev2", FullName: "Developer Two", Role: "developer"},
+			{Name: "rev", FullName: "Reviewer", Role: "reviewer"},
+			{Name: "pm", FullName: "Project Manager", Role: "pm"},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		role         string
+		expectedName string
+		shouldFind   bool
+	}{
+		{
+			name:         "developer役割のエージェントを取得（最初のもの）",
+			role:         "developer",
+			expectedName: "dev1",
+			shouldFind:   true,
+		},
+		{
+			name:         "reviewer役割のエージェントを取得",
+			role:         "reviewer",
+			expectedName: "rev",
+			shouldFind:   true,
+		},
+		{
+			name:         "pm役割のエージェントを取得",
+			role:         "pm",
+			expectedName: "pm",
+			shouldFind:   true,
+		},
+		{
+			name:         "存在しない役割",
+			role:         "unknown",
+			expectedName: "",
+			shouldFind:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cfg.GetAgentByRole(tt.role)
+			if tt.shouldFind {
+				if got == nil {
+					t.Errorf("GetAgentByRole(%q) returned nil, want agent", tt.role)
+					return
+				}
+				if got.Name != tt.expectedName {
+					t.Errorf("GetAgentByRole(%q).Name = %q, want %q", tt.role, got.Name, tt.expectedName)
+				}
+			} else {
+				if got != nil {
+					t.Errorf("GetAgentByRole(%q) = %v, want nil", tt.role, got)
+				}
+			}
+		})
+	}
+}
+
+func TestGetAgentsByRole(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "dev1", Role: "developer"},
+			{Name: "dev2", Role: "developer"},
+			{Name: "rev", Role: "reviewer"},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		role          string
+		expectedCount int
+	}{
+		{
+			name:          "developer役割は2人",
+			role:          "developer",
+			expectedCount: 2,
+		},
+		{
+			name:          "reviewer役割は1人",
+			role:          "reviewer",
+			expectedCount: 1,
+		},
+		{
+			name:          "存在しない役割は0人",
+			role:          "unknown",
+			expectedCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cfg.GetAgentsByRole(tt.role)
+			if len(got) != tt.expectedCount {
+				t.Errorf("GetAgentsByRole(%q) returned %d agents, want %d", tt.role, len(got), tt.expectedCount)
+			}
+		})
+	}
+}
+
+func TestGetTeamName(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		expected string
+	}{
+		{
+			name:     "デフォルト（空）はTeam",
+			cfg:      &Config{},
+			expected: "Team",
+		},
+		{
+			name:     "カスタムチーム名",
+			cfg:      &Config{TeamName: "MAXAM"},
+			expected: "MAXAM",
+		},
+		{
+			name:     "別のチーム名",
+			cfg:      &Config{TeamName: "Alpha Team"},
+			expected: "Alpha Team",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.GetTeamName()
+			if got != tt.expected {
+				t.Errorf("GetTeamName() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

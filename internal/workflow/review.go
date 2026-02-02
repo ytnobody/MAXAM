@@ -55,8 +55,14 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 		History: make([]ReviewRound, 0),
 	}
 
-	yuki := rc.agents.Yuki()
-	priya := rc.agents.Priya()
+	developer, ok := rc.agents.GetByRole("developer")
+	if !ok {
+		return nil, fmt.Errorf("no agent with 'developer' role found")
+	}
+	reviewer, ok := rc.agents.GetByRole("reviewer")
+	if !ok {
+		return nil, fmt.Errorf("no agent with 'reviewer' role found")
+	}
 
 	currentTask := task
 
@@ -64,40 +70,40 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 		round := ReviewRound{Round: i}
 		fmt.Printf("\n=== Round %d ===\n", i)
 
-		// Yuki implements
-		fmt.Println("[Yuki] Implementing...")
+		// Developer implements
+		fmt.Printf("[%s] Implementing...\n", developer.Name)
 		implPrompt := fmt.Sprintf(`タスク: %s
 
 実装してください。コードを書く場合は、適切にファイルを作成・編集してください。`, currentTask)
 
 		start := time.Now()
-		impl, err := yuki.Run(ctx, implPrompt)
+		impl, err := developer.Run(ctx, implPrompt)
 		if err != nil {
-			return nil, fmt.Errorf("yuki implementation: %w", err)
+			return nil, fmt.Errorf("developer implementation: %w", err)
 		}
 		round.Implementation = impl
-		fmt.Printf("[Yuki] Done (%v)\n", time.Since(start).Round(time.Millisecond))
+		fmt.Printf("[%s] Done (%v)\n", developer.Name, time.Since(start).Round(time.Millisecond))
 
-		// Log Yuki's work
-		if log, err := rc.logMgr.Get("yuki"); err == nil {
+		// Log developer's work
+		if log, err := rc.logMgr.Get(strings.ToLower(strings.Split(developer.Name, " ")[0])); err == nil {
 			log.LogSimple(implPrompt, impl, time.Since(start))
 		}
 
-		// Priya reviews
+		// Reviewer reviews
 		// Use Haiku for follow-up reviews (round > 1) with lightweight changes
 		reviewModel := selectReviewModel(i, impl)
 		modelInfo := ""
 		if reviewModel != agent.ModelDefault {
 			modelInfo = fmt.Sprintf(" (model: %s)", reviewModel)
 		}
-		fmt.Printf("[Priya] Reviewing...%s\n", modelInfo)
+		fmt.Printf("[%s] Reviewing...%s\n", reviewer.Name, modelInfo)
 
 		reviewPrompt := fmt.Sprintf(`以下の実装をレビューしてください。
 
 ## タスク
 %s
 
-## Yukiの実装
+## 実装内容
 %s
 
 レビュー結果を以下の形式で出力してください:
@@ -107,18 +113,18 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 		start = time.Now()
 		var review string
 		if reviewModel != agent.ModelDefault {
-			review, err = priya.RunWithModel(ctx, reviewPrompt, reviewModel)
+			review, err = reviewer.RunWithModel(ctx, reviewPrompt, reviewModel)
 		} else {
-			review, err = priya.Run(ctx, reviewPrompt)
+			review, err = reviewer.Run(ctx, reviewPrompt)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("priya review: %w", err)
+			return nil, fmt.Errorf("reviewer: %w", err)
 		}
 		round.Review = review
-		fmt.Printf("[Priya] Done (%v)\n", time.Since(start).Round(time.Millisecond))
+		fmt.Printf("[%s] Done (%v)\n", reviewer.Name, time.Since(start).Round(time.Millisecond))
 
-		// Log Priya's work
-		if log, err := rc.logMgr.Get("priya"); err == nil {
+		// Log reviewer's work
+		if log, err := rc.logMgr.Get(strings.ToLower(strings.Split(reviewer.Name, " ")[0])); err == nil {
 			log.LogSimple(reviewPrompt, review, time.Since(start))
 		}
 
@@ -130,7 +136,7 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 		result.Iterations = i
 
 		if round.Approved {
-			fmt.Println("[Priya] Approved!")
+			fmt.Printf("[%s] Approved!\n", reviewer.Name)
 			result.Approved = true
 			result.FinalOutput = impl
 			return result, nil
@@ -139,7 +145,7 @@ func (rc *ReviewCycle) Run(ctx context.Context, task string) (*ReviewResult, err
 		// Check for critical issues
 		for _, tag := range round.Tags {
 			if tag == "SEC-CRITICAL" || tag == "DESIGN" || tag == "REQUIREMENTS" {
-				fmt.Printf("[Priya] Escalation required: %s\n", tag)
+				fmt.Printf("[%s] Escalation required: %s\n", reviewer.Name, tag)
 				result.Escalated = true
 				return result, nil
 			}
