@@ -131,14 +131,28 @@ func (h *Handler) handleChannelMessages(channel string, msgs []*IncomingMessage)
 }
 
 // detectAgentMention checks if any agent is mentioned in the messages
+// For bot messages, it excludes mentions to the sender agent (loop prevention)
 func (h *Handler) detectAgentMention(msgs []*IncomingMessage) string {
 	for _, msg := range msgs {
 		text := strings.ToLower(msg.Text)
+
+		// Get sender agent name (lowercase, first word) for loop detection
+		var senderShortName string
+		if msg.IsFromBot && msg.SenderAgent != "" {
+			parts := strings.Fields(msg.SenderAgent)
+			if len(parts) > 0 {
+				senderShortName = strings.ToLower(parts[0])
+			}
+		}
 
 		// Check all configured agents for @mentions
 		for _, m := range h.members.All() {
 			name := strings.ToLower(m.Name)
 			if strings.Contains(text, "@"+name) {
+				// Skip if mentioned agent is the same as sender (loop prevention)
+				if msg.IsFromBot && name == senderShortName {
+					continue
+				}
 				return name
 			}
 		}

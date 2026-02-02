@@ -28,12 +28,14 @@ type Client struct {
 
 // IncomingMessage represents a message from Slack
 type IncomingMessage struct {
-	Channel   string
-	User      string
-	UserName  string
-	Text      string
-	Timestamp string
-	ThreadTS  string
+	Channel      string
+	User         string
+	UserName     string
+	Text         string
+	Timestamp    string
+	ThreadTS     string
+	IsFromBot    bool   // true if message is from a bot (agent)
+	SenderAgent  string // agent name if from bot (e.g., "Mei Chen")
 }
 
 // Config holds Slack configuration
@@ -132,25 +134,50 @@ func (c *Client) handleEvent(evt socketmode.Event) {
 }
 
 func (c *Client) handleMessageEvent(ev *slackevents.MessageEvent) {
-	// Ignore bot messages and message changes
-	if ev.SubType != "" || ev.User == c.botUserID {
+	// Ignore message changes/deletions (but not bot_message subtype)
+	if ev.SubType != "" && ev.SubType != "bot_message" {
 		return
 	}
 
+	// For bot messages, only process if it contains an @mention
+	// This allows agent-to-agent mentions while preventing loops
+	isBotMessage := ev.User == c.botUserID || ev.SubType == "bot_message"
+	if isBotMessage {
+		if !strings.Contains(ev.Text, "@") {
+			return
+		}
+	}
+
 	// Get user info
-	user, err := c.api.GetUserInfo(ev.User)
-	userName := ev.User
-	if err == nil {
-		userName = user.RealName
+	var userName string
+	if isBotMessage {
+		// For bot messages, use the Username field (agent name)
+		userName = ev.Username
+		if userName == "" {
+			userName = "Bot"
+		}
+	} else {
+		user, err := c.api.GetUserInfo(ev.User)
+		userName = ev.User
+		if err == nil {
+			userName = user.RealName
+		}
 	}
 
 	msg := &IncomingMessage{
-		Channel:   ev.Channel,
-		User:      ev.User,
-		UserName:  userName,
-		Text:      ev.Text,
-		Timestamp: ev.TimeStamp,
-		ThreadTS:  ev.ThreadTimeStamp,
+		Channel:     ev.Channel,
+		User:        ev.User,
+		UserName:    userName,
+		Text:        ev.Text,
+		Timestamp:   ev.TimeStamp,
+		ThreadTS:    ev.ThreadTimeStamp,
+		IsFromBot:   isBotMessage,
+		SenderAgent: "",
+	}
+
+	// For bot messages, set the sender agent name
+	if isBotMessage && ev.Username != "" {
+		msg.SenderAgent = ev.Username
 	}
 
 	c.messageQueue <- msg
