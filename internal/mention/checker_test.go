@@ -177,6 +177,12 @@ func TestNewChecker(t *testing.T) {
 			message:     "@オーナー 確認お願い",
 			wantMention: true,
 		},
+		{
+			name:        "owner mention always works",
+			agentNames:  []string{"alice", "bob"},
+			message:     "@オーナー お願い",
+			wantMention: true,
+		},
 	}
 
 	for _, tt := range tests {

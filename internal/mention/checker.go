@@ -26,7 +26,7 @@ func NewChecker(agentNames []string) *Checker {
 		}
 	}
 
-	// Build pattern: @(name1|name2|Name1|Name2|...)
+	// Build pattern: @(name1|name2|Name1|Name2|オーナー|...)
 	var parts []string
 	for _, name := range agentNames {
 		// Escape special regex characters
@@ -45,6 +45,8 @@ func NewChecker(agentNames []string) *Checker {
 			}
 		}
 	}
+	// Always include @オーナー as a valid mention
+	parts = append(parts, "オーナー")
 
 	pattern := `@(` + strings.Join(parts, "|") + `)`
 	return &Checker{
