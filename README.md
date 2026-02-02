@@ -50,6 +50,70 @@ make build
 
 ## 使い方
 
+### チーム構成
+
+新しいプロジェクトでMAXAMを使う場合、まずチームを構成します。
+
+#### 対話的にセットアップ（推奨）
+
+```bash
+maxam team init
+```
+
+質問に答えていくだけでチーム構成が完了します：
+
+```
+? Team name: My Project Team
+? Add a team member? Yes
+? Member name (e.g., alex): yuki
+? Member full name (e.g., Alex Developer): Yuki Tanaka
+? Member role (e.g., Backend / Frontend): Backend / Infrastructure
+? Add another member? Yes
+...
+? Add another member? No
+Team configuration saved to .maxam/config.yaml
+```
+
+#### 個別にメンバーを追加/削除
+
+```bash
+# メンバー追加
+maxam team add yuki "Backend / Infrastructure"
+
+# メンバー一覧
+maxam team list
+
+# メンバー削除
+maxam team remove yuki
+```
+
+#### コマンド一覧
+
+| コマンド | 説明 |
+|----------|------|
+| `maxam team init` | 対話的にチーム構成を初期化 |
+| `maxam team add <name> <role>` | メンバーを追加 |
+| `maxam team list` | 現在のメンバー一覧を表示 |
+| `maxam team remove <name>` | メンバーを削除（`rm`でも可） |
+
+#### 設定ファイルの保存場所
+
+チーム構成は `.maxam/config.yaml` に保存されます：
+
+```yaml
+version: "1"
+default_agent: yuki
+agents:
+  - name: yuki
+    full_name: Yuki Tanaka
+    role: Backend / Infrastructure
+  - name: priya
+    full_name: Priya Sharma
+    role: Review / Security
+```
+
+> **Note:** 最初に追加されたメンバーが自動的にデフォルトエージェントになります。
+
 ### チームチャット（メイン）
 
 ```bash
