@@ -65,7 +65,20 @@ func (r *Runner) buildSystemPrompt() (string, error) {
 		}
 	}
 
-	// 3. Agent-specific CLAUDE.md (optional)
+	// 3. Project-local CLAUDE.md from .maxam/ directory (optional)
+	// Priority: .maxam/CLAUDE.md > CLAUDE.local.md (deprecated)
+	projectClaudeMD := config.ProjectClaudeMD(r.WorkDir)
+	if data, err := os.ReadFile(projectClaudeMD); err == nil {
+		parts = append(parts, string(data))
+	} else {
+		// Fallback to deprecated CLAUDE.local.md for backward compatibility
+		localPath := filepath.Join(r.WorkDir, "CLAUDE.local.md")
+		if data, err := os.ReadFile(localPath); err == nil {
+			parts = append(parts, string(data))
+		}
+	}
+
+	// 4. Agent-specific CLAUDE.md (optional)
 	if r.ClaudeMDDir != "" {
 		agentPath := filepath.Join(r.ClaudeMDDir, filename)
 		if data, err := os.ReadFile(agentPath); err == nil {
@@ -234,21 +247,15 @@ type Agents struct {
 	runners map[string]*Runner
 }
 
-// NewAgents creates the agent team from ~/.maxam/agents/
+// NewAgents creates the agent team with project-local priority
+// Priority: project/.maxam/agents/ > ~/.maxam/agents/
 func NewAgents(workDir string) *Agents {
 	// Initialize ~/.maxam/ if needed
 	embeddedAgents, _ := config.GetEmbeddedAgents()
 	config.EnsureInitialized(embeddedAgents)
 
-	// Get agents directory (~/.maxam/agents/)
-	agentsDir, err := config.AgentsDir()
-	if err != nil {
-		// Fallback to local agents dir
-		agentsDir = filepath.Join(workDir, "agents")
-	}
-
-	// Load agent config
-	cfg, err := config.Load()
+	// Load config with project overrides
+	cfg, err := config.LoadWithProject(workDir)
 	if err != nil {
 		cfg = config.DefaultConfig()
 	}
@@ -266,7 +273,12 @@ func NewAgents(workDir string) *Agents {
 			fullName = name // Use agent name if FullName not set
 		}
 
-		agentDir := filepath.Join(agentsDir, name)
+		// Get agent directory with project priority
+		agentDir, err := config.GetAgentDirWithProject(workDir, name)
+		if err != nil {
+			continue // Skip if agent not found
+		}
+
 		// Only add if CLAUDE.md exists
 		if _, err := os.Stat(filepath.Join(agentDir, "CLAUDE.md")); err == nil {
 			runner := NewRunner(fullName, workDir, agentDir)

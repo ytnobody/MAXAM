@@ -336,3 +336,242 @@ func TestGetWorkersPerAgent(t *testing.T) {
 		})
 	}
 }
+
+func TestProjectConfigDir(t *testing.T) {
+	projectDir := "/tmp/myproject"
+	got := ProjectConfigDir(projectDir)
+	expected := "/tmp/myproject/.maxam"
+	if got != expected {
+		t.Errorf("ProjectConfigDir() = %q, want %q", got, expected)
+	}
+}
+
+func TestProjectAgentsDir(t *testing.T) {
+	projectDir := "/tmp/myproject"
+	got := ProjectAgentsDir(projectDir)
+	expected := "/tmp/myproject/.maxam/agents"
+	if got != expected {
+		t.Errorf("ProjectAgentsDir() = %q, want %q", got, expected)
+	}
+}
+
+func TestProjectClaudeMD(t *testing.T) {
+	projectDir := "/tmp/myproject"
+	got := ProjectClaudeMD(projectDir)
+	expected := "/tmp/myproject/.maxam/CLAUDE.md"
+	if got != expected {
+		t.Errorf("ProjectClaudeMD() = %q, want %q", got, expected)
+	}
+}
+
+func TestLoadWithProject(t *testing.T) {
+	// Create temp dirs
+	tmpHome := t.TempDir()
+	projectDir := t.TempDir()
+
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", originalHome)
+
+	// Initialize global config
+	agents, _ := GetEmbeddedAgents()
+	EnsureInitialized(agents)
+
+	// Test 1: No project config - should return global config
+	cfg, err := LoadWithProject(projectDir)
+	if err != nil {
+		t.Fatalf("LoadWithProject() error: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("LoadWithProject() returned nil")
+	}
+
+	// Test 2: With project config - should override
+	projectMaxamDir := filepath.Join(projectDir, ".maxam")
+	os.MkdirAll(projectMaxamDir, 0755)
+
+	projectConfigContent := `
+version: "2"
+default_agent: pixel
+agents:
+  - name: pixel
+    full_name: Pixel Artist
+    role: Art
+  - name: chiptune
+    full_name: Chiptune Composer
+    role: Music
+yolo_mode: true
+`
+	os.WriteFile(filepath.Join(projectMaxamDir, "config.yaml"), []byte(projectConfigContent), 0644)
+
+	cfg, err = LoadWithProject(projectDir)
+	if err != nil {
+		t.Fatalf("LoadWithProject() with project config error: %v", err)
+	}
+
+	if cfg.Version != "2" {
+		t.Errorf("Version = %q, want %q", cfg.Version, "2")
+	}
+	if cfg.DefaultAgent != "pixel" {
+		t.Errorf("DefaultAgent = %q, want %q", cfg.DefaultAgent, "pixel")
+	}
+	if len(cfg.Agents) != 2 {
+		t.Errorf("Agents count = %d, want 2", len(cfg.Agents))
+	}
+	if !cfg.YOLOMode {
+		t.Error("YOLOMode should be true")
+	}
+}
+
+func TestMergeConfigs(t *testing.T) {
+	base := &Config{
+		Version:             "1",
+		DefaultAgent:        "mei",
+		AnalysisMinMessages: 10,
+		ContextMode:         ContextModeFull,
+		WorkersPerAgent:     1,
+		Agents: []AgentConfig{
+			{Name: "mei", FullName: "Mei Chen", Role: "PM"},
+		},
+	}
+
+	override := &Config{
+		Version:      "2",
+		DefaultAgent: "pixel",
+		YOLOMode:     true,
+		Agents: []AgentConfig{
+			{Name: "pixel", FullName: "Pixel", Role: "Art"},
+		},
+	}
+
+	merged := mergeConfigs(base, override)
+
+	if merged.Version != "2" {
+		t.Errorf("Version = %q, want %q", merged.Version, "2")
+	}
+	if merged.DefaultAgent != "pixel" {
+		t.Errorf("DefaultAgent = %q, want %q", merged.DefaultAgent, "pixel")
+	}
+	if merged.AnalysisMinMessages != 10 {
+		t.Errorf("AnalysisMinMessages = %d, want 10", merged.AnalysisMinMessages)
+	}
+	if merged.ContextMode != ContextModeFull {
+		t.Errorf("ContextMode = %q, want %q", merged.ContextMode, ContextModeFull)
+	}
+	if !merged.YOLOMode {
+		t.Error("YOLOMode should be true")
+	}
+	if len(merged.Agents) != 1 || merged.Agents[0].Name != "pixel" {
+		t.Error("Agents should be overridden to [pixel]")
+	}
+}
+
+func TestListAgentsWithProject(t *testing.T) {
+	tmpHome := t.TempDir()
+	projectDir := t.TempDir()
+
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", originalHome)
+
+	// Initialize global agents
+	agents, _ := GetEmbeddedAgents()
+	EnsureInitialized(agents)
+
+	// Create project-local agent
+	projectAgentsDir := filepath.Join(projectDir, ".maxam", "agents", "pixel")
+	os.MkdirAll(projectAgentsDir, 0755)
+	os.WriteFile(filepath.Join(projectAgentsDir, "CLAUDE.md"), []byte("# Pixel Agent"), 0644)
+
+	list, err := ListAgentsWithProject(projectDir)
+	if err != nil {
+		t.Fatalf("ListAgentsWithProject() error: %v", err)
+	}
+
+	// Should include both global agents and project-local agent
+	hasPixel := false
+	for _, name := range list {
+		if name == "pixel" {
+			hasPixel = true
+			break
+		}
+	}
+	if !hasPixel {
+		t.Error("ListAgentsWithProject() should include project-local agent 'pixel'")
+	}
+
+	if len(list) < len(DefaultAgents)+1 {
+		t.Errorf("ListAgentsWithProject() returned %d agents, want at least %d", len(list), len(DefaultAgents)+1)
+	}
+}
+
+func TestGetAgentClaudeMDWithProject(t *testing.T) {
+	tmpHome := t.TempDir()
+	projectDir := t.TempDir()
+
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", originalHome)
+
+	// Initialize global agents
+	agents, _ := GetEmbeddedAgents()
+	EnsureInitialized(agents)
+
+	// Test 1: Global agent
+	path, err := GetAgentClaudeMDWithProject(projectDir, "mei")
+	if err != nil {
+		t.Errorf("GetAgentClaudeMDWithProject(mei) error: %v", err)
+	}
+	if path == "" {
+		t.Error("GetAgentClaudeMDWithProject(mei) returned empty path")
+	}
+
+	// Test 2: Project-local agent (should take priority)
+	projectAgentDir := filepath.Join(projectDir, ".maxam", "agents", "mei")
+	os.MkdirAll(projectAgentDir, 0755)
+	projectClaudeMD := filepath.Join(projectAgentDir, "CLAUDE.md")
+	os.WriteFile(projectClaudeMD, []byte("# Project Mei"), 0644)
+
+	path, err = GetAgentClaudeMDWithProject(projectDir, "mei")
+	if err != nil {
+		t.Errorf("GetAgentClaudeMDWithProject(mei) with project error: %v", err)
+	}
+	if path != projectClaudeMD {
+		t.Errorf("GetAgentClaudeMDWithProject(mei) = %q, want %q (project should take priority)", path, projectClaudeMD)
+	}
+}
+
+func TestGetAgentDirWithProject(t *testing.T) {
+	tmpHome := t.TempDir()
+	projectDir := t.TempDir()
+
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", originalHome)
+
+	// Initialize global agents
+	agents, _ := GetEmbeddedAgents()
+	EnsureInitialized(agents)
+
+	// Test 1: Global agent
+	dir, err := GetAgentDirWithProject(projectDir, "yuki")
+	if err != nil {
+		t.Errorf("GetAgentDirWithProject(yuki) error: %v", err)
+	}
+	if dir == "" {
+		t.Error("GetAgentDirWithProject(yuki) returned empty dir")
+	}
+
+	// Test 2: Project-local agent takes priority
+	projectAgentDir := filepath.Join(projectDir, ".maxam", "agents", "yuki")
+	os.MkdirAll(projectAgentDir, 0755)
+	os.WriteFile(filepath.Join(projectAgentDir, "CLAUDE.md"), []byte("# Project Yuki"), 0644)
+
+	dir, err = GetAgentDirWithProject(projectDir, "yuki")
+	if err != nil {
+		t.Errorf("GetAgentDirWithProject(yuki) with project error: %v", err)
+	}
+	if dir != projectAgentDir {
+		t.Errorf("GetAgentDirWithProject(yuki) = %q, want %q", dir, projectAgentDir)
+	}
+}

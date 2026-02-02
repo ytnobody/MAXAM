@@ -23,13 +23,14 @@ type Members struct {
 }
 
 // NewMembers creates a Members instance from config and CLAUDE.md
+// Priority: project/.maxam/config.yaml > ~/.maxam/config.yaml > default
 func NewMembers(workDir string) *Members {
 	m := &Members{
 		members: make(map[string]*Member),
 	}
 
-	// 1. Load from config (base)
-	cfg, err := config.Load()
+	// 1. Load from config with project overrides
+	cfg, err := config.LoadWithProject(workDir)
 	if err != nil {
 		cfg = config.DefaultConfig()
 	}
@@ -41,7 +42,19 @@ func NewMembers(workDir string) *Members {
 		}
 	}
 
-	// 2. Parse CLAUDE.md and merge (CLAUDE.md can add new members)
+	// 2. Parse project-local CLAUDE.md (.maxam/CLAUDE.md) first
+	projectClaudeMD := config.ProjectClaudeMD(workDir)
+	if data, err := os.ReadFile(projectClaudeMD); err == nil {
+		parsed := ParseMemberTable(string(data))
+		for _, pm := range parsed {
+			key := strings.ToLower(pm.Name)
+			if _, exists := m.members[key]; !exists {
+				m.members[key] = pm
+			}
+		}
+	}
+
+	// 3. Parse root CLAUDE.md and merge (CLAUDE.md can add new members)
 	claudeMDPath := filepath.Join(workDir, "CLAUDE.md")
 	if data, err := os.ReadFile(claudeMDPath); err == nil {
 		parsed := ParseMemberTable(string(data))

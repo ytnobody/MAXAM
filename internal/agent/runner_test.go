@@ -88,6 +88,110 @@ func containsStr(s, substr string) bool {
 	return false
 }
 
+func TestBuildSystemPromptWithProjectLocalCLAUDE(t *testing.T) {
+	// Create temp directory structure
+	tmpDir, err := os.MkdirTemp("", "agent_project_local_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create root CLAUDE.md
+	rootContent := "# Root Rules"
+	if err := os.WriteFile(filepath.Join(tmpDir, "CLAUDE.md"), []byte(rootContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("reads .maxam/CLAUDE.md", func(t *testing.T) {
+		// Create .maxam/CLAUDE.md
+		maxamDir := filepath.Join(tmpDir, ".maxam")
+		os.MkdirAll(maxamDir, 0755)
+		projectLocalContent := "# Project Local Settings"
+		if err := os.WriteFile(filepath.Join(maxamDir, "CLAUDE.md"), []byte(projectLocalContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		r := NewRunner("Test", tmpDir, "")
+		prompt, err := r.buildSystemPrompt()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !containsStr(prompt, projectLocalContent) {
+			t.Errorf("prompt should contain .maxam/CLAUDE.md content")
+		}
+	})
+
+	t.Run("fallback to CLAUDE.local.md when .maxam/CLAUDE.md not exists", func(t *testing.T) {
+		// Create a dir without .maxam/CLAUDE.md but with CLAUDE.local.md
+		fallbackDir, _ := os.MkdirTemp("", "fallback_test")
+		defer os.RemoveAll(fallbackDir)
+
+		// Create root CLAUDE.md
+		if err := os.WriteFile(filepath.Join(fallbackDir, "CLAUDE.md"), []byte(rootContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create deprecated CLAUDE.local.md
+		localContent := "# Local Learning (deprecated)"
+		if err := os.WriteFile(filepath.Join(fallbackDir, "CLAUDE.local.md"), []byte(localContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		r := NewRunner("Test", fallbackDir, "")
+		prompt, err := r.buildSystemPrompt()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Should contain CLAUDE.local.md content as fallback
+		if !containsStr(prompt, localContent) {
+			t.Errorf("prompt should fallback to CLAUDE.local.md when .maxam/CLAUDE.md not exists")
+		}
+	})
+
+	t.Run(".maxam/CLAUDE.md takes priority over CLAUDE.local.md", func(t *testing.T) {
+		// Create a dir with both files
+		priorityDir, _ := os.MkdirTemp("", "priority_test")
+		defer os.RemoveAll(priorityDir)
+
+		// Create root CLAUDE.md
+		if err := os.WriteFile(filepath.Join(priorityDir, "CLAUDE.md"), []byte(rootContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create .maxam/CLAUDE.md
+		maxamDir := filepath.Join(priorityDir, ".maxam")
+		os.MkdirAll(maxamDir, 0755)
+		newContent := "# New Project Local"
+		if err := os.WriteFile(filepath.Join(maxamDir, "CLAUDE.md"), []byte(newContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create deprecated CLAUDE.local.md
+		oldContent := "# Old Local (should not be read)"
+		if err := os.WriteFile(filepath.Join(priorityDir, "CLAUDE.local.md"), []byte(oldContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		r := NewRunner("Test", priorityDir, "")
+		prompt, err := r.buildSystemPrompt()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Should contain .maxam/CLAUDE.md content
+		if !containsStr(prompt, newContent) {
+			t.Errorf("prompt should contain .maxam/CLAUDE.md content")
+		}
+
+		// Should NOT contain CLAUDE.local.md content
+		if containsStr(prompt, oldContent) {
+			t.Errorf("prompt should not contain CLAUDE.local.md when .maxam/CLAUDE.md exists")
+		}
+	})
+}
+
 func TestModelConstants(t *testing.T) {
 	tests := []struct {
 		model Model

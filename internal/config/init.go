@@ -116,3 +116,65 @@ func GetAgentDir(name string) (string, error) {
 	}
 	return filepath.Join(agentsDir, name), nil
 }
+
+// ListAgentsWithProject returns agent names with project-local priority
+// Priority: project/.maxam/agents/ > ~/.maxam/agents/
+func ListAgentsWithProject(projectDir string) ([]string, error) {
+	agentSet := make(map[string]bool)
+
+	// 1. Get global agents first
+	globalAgents, err := ListAgents()
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range globalAgents {
+		agentSet[name] = true
+	}
+
+	// 2. Get project-local agents (these take priority)
+	projectAgentsDir := ProjectAgentsDir(projectDir)
+	entries, err := os.ReadDir(projectAgentsDir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				claudeMD := filepath.Join(projectAgentsDir, entry.Name(), "CLAUDE.md")
+				if _, err := os.Stat(claudeMD); err == nil {
+					agentSet[entry.Name()] = true
+				}
+			}
+		}
+	}
+
+	// Convert to slice
+	agents := make([]string, 0, len(agentSet))
+	for name := range agentSet {
+		agents = append(agents, name)
+	}
+	return agents, nil
+}
+
+// GetAgentClaudeMDWithProject returns agent's CLAUDE.md path with project priority
+// Priority: project/.maxam/agents/{name}/ > ~/.maxam/agents/{name}/
+func GetAgentClaudeMDWithProject(projectDir, name string) (string, error) {
+	// 1. Try project-local first
+	projectClaudeMD := filepath.Join(ProjectAgentsDir(projectDir), name, "CLAUDE.md")
+	if _, err := os.Stat(projectClaudeMD); err == nil {
+		return projectClaudeMD, nil
+	}
+
+	// 2. Fall back to global
+	return GetAgentClaudeMD(name)
+}
+
+// GetAgentDirWithProject returns agent directory with project priority
+// Priority: project/.maxam/agents/{name}/ > ~/.maxam/agents/{name}/
+func GetAgentDirWithProject(projectDir, name string) (string, error) {
+	// 1. Try project-local first
+	projectAgentDir := filepath.Join(ProjectAgentsDir(projectDir), name)
+	if _, err := os.Stat(filepath.Join(projectAgentDir, "CLAUDE.md")); err == nil {
+		return projectAgentDir, nil
+	}
+
+	// 2. Fall back to global
+	return GetAgentDir(name)
+}
