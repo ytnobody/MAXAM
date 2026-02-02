@@ -253,8 +253,9 @@ func initialTuiModel(workDir string) tuiModel {
 	}
 	agentRouter := router.New(routerAgents, cfg.DefaultAgent)
 
-	// Setup mention checker with agent names from config
-	mention.SetDefaultChecker(mention.NewChecker(agentNames))
+	// Setup mention checker with agent names from config + owner
+	mentionTargets := append(agentNames, "オーナー")
+	mention.SetDefaultChecker(mention.NewChecker(mentionTargets))
 
 	members := member.NewMembers(workDir)
 

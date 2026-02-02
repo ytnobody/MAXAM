@@ -8,28 +8,8 @@ import (
 
 // Result represents the result of a mention check
 type Result struct {
-	HasRequestPattern bool     // 依頼パターンが検出されたか
-	HasMention        bool     // メンションが含まれているか
-	NeedsWarning      bool     // 警告が必要か
-	Patterns          []string // 検出された依頼パターン
-}
-
-// 依頼パターンの正規表現
-var requestPatterns = []*regexp.Regexp{
-	// 「〜お願い」系
-	regexp.MustCompile(`お願い(します|しま|)|おねがい`),
-	// 「〜して」系
-	regexp.MustCompile(`(確認|チェック|レビュー|実装|修正|追加|削除|更新|作成|調査|分析|対応|検討|共有|報告|連絡|送信)して`),
-	// 「〜してください」系
-	regexp.MustCompile(`して(ください|くれ|ほしい|もらえ)`),
-	// 「〜やって」系
-	regexp.MustCompile(`やって(ください|くれ|ほしい|もらえ|)`),
-	// 「〜頼む」系
-	regexp.MustCompile(`頼(む|みます|んだ)`),
-	// 「〜できる？」系（依頼っぽい疑問）
-	regexp.MustCompile(`(できる|やれる|可能)[?？]`),
-	// 「〜よろしく」系
-	regexp.MustCompile(`よろしく(お願い|ね|)`),
+	HasMention   bool // メンションが含まれているか
+	NeedsWarning bool // 警告が必要か（メンションなし）
 }
 
 // Checker detects mention leaks in messages
@@ -49,13 +29,19 @@ func NewChecker(agentNames []string) *Checker {
 	// Build pattern: @(name1|name2|Name1|Name2|...)
 	var parts []string
 	for _, name := range agentNames {
+		// Escape special regex characters
+		escaped := regexp.QuoteMeta(name)
+		parts = append(parts, escaped)
+
+		// For ASCII names, also add lowercase and title case variants
 		lower := strings.ToLower(name)
-		// Add both lowercase and title case
-		parts = append(parts, lower)
-		if len(lower) > 0 {
+		if lower != name && isASCII(lower) {
+			parts = append(parts, regexp.QuoteMeta(lower))
+		}
+		if len(lower) > 0 && isASCII(lower) {
 			titled := strings.ToUpper(string(lower[0])) + lower[1:]
-			if titled != lower {
-				parts = append(parts, titled)
+			if titled != name && titled != lower {
+				parts = append(parts, regexp.QuoteMeta(titled))
 			}
 		}
 	}
@@ -66,31 +52,31 @@ func NewChecker(agentNames []string) *Checker {
 	}
 }
 
+// isASCII checks if a string contains only ASCII characters
+func isASCII(s string) bool {
+	for _, r := range s {
+		if r > 127 {
+			return false
+		}
+	}
+	return true
+}
+
 // Check analyzes a message for mention leaks
+// 新仕様: すべてのメッセージにメンション必須。メンションなしは警告対象。
 func (c *Checker) Check(message string) Result {
-	result := Result{
-		Patterns: make([]string, 0),
+	result := Result{}
+
+	// 空メッセージは警告不要
+	if strings.TrimSpace(message) == "" {
+		return result
 	}
 
 	// メンションの検出
 	result.HasMention = c.mentionPattern.MatchString(message)
 
-	// 依頼パターンの検出
-	lower := strings.ToLower(message)
-	for _, pattern := range requestPatterns {
-		if pattern.MatchString(lower) || pattern.MatchString(message) {
-			result.HasRequestPattern = true
-			// マッチしたパターンを記録（デバッグ用）
-			matches := pattern.FindAllString(message, -1)
-			if len(matches) == 0 {
-				matches = pattern.FindAllString(lower, -1)
-			}
-			result.Patterns = append(result.Patterns, matches...)
-		}
-	}
-
-	// 依頼パターンがあるのにメンションがない場合は警告
-	result.NeedsWarning = result.HasRequestPattern && !result.HasMention
+	// メンションがなければ警告
+	result.NeedsWarning = !result.HasMention
 
 	return result
 }
@@ -104,16 +90,16 @@ func SetDefaultChecker(c *Checker) {
 }
 
 // Check analyzes a message for mention leaks using the default checker
-// For backward compatibility
+// IMPORTANT: Call SetDefaultChecker first to set valid mention targets from config
 func Check(message string) Result {
 	if defaultChecker == nil {
-		// fallback to hardcoded names for backward compatibility
-		defaultChecker = NewChecker([]string{"mei", "yuki", "rin", "shiori", "priya", "amara"})
+		// No hardcoded names - use empty list (any @mention is valid) as fallback
+		defaultChecker = NewChecker([]string{})
 	}
 	return defaultChecker.Check(message)
 }
 
 // FormatWarning returns a warning message for display
 func FormatWarning() string {
-	return "宛先が不明確かも（@名前 で指定してね）"
+	return "メンション先を明示してください（@名前）"
 }
