@@ -48,41 +48,104 @@ func TestNewRunner(t *testing.T) {
 }
 
 func TestNewAgents(t *testing.T) {
-	agents := NewAgents("/work")
+	// Create temp directory with test agent structure
+	tmpDir, err := os.MkdirTemp("", "agents_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
 
-	// Check all agents exist
-	names := []string{"yuki", "priya", "mei", "amara"}
-	for _, name := range names {
+	// Create .maxam directory structure
+	maxamDir := filepath.Join(tmpDir, ".maxam")
+	agentsDir := filepath.Join(maxamDir, "agents")
+
+	// Create test agents
+	testAgents := []string{"alice", "bob"}
+	for _, name := range testAgents {
+		agentDir := filepath.Join(agentsDir, name)
+		if err := os.MkdirAll(agentDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		// Create CLAUDE.md for each agent
+		claudeMD := filepath.Join(agentDir, "CLAUDE.md")
+		if err := os.WriteFile(claudeMD, []byte("# "+name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Create config.yaml with test agents
+	configContent := `version: "1"
+default_agent: alice
+agents:
+  - name: alice
+    full_name: Alice Test
+    role: tester
+  - name: bob
+    full_name: Bob Test
+    role: reviewer
+`
+	if err := os.WriteFile(filepath.Join(maxamDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Test with project directory containing config
+	agents := NewAgents(tmpDir)
+
+	// Check test agents exist
+	for _, name := range testAgents {
 		if _, ok := agents.Get(name); !ok {
 			t.Errorf("agent %q not found", name)
 		}
 	}
 
-	// Check helper methods
-	if agents.Yuki() == nil {
-		t.Error("Yuki() returned nil")
-	}
-	if agents.Priya() == nil {
-		t.Error("Priya() returned nil")
-	}
-	if agents.Mei() == nil {
-		t.Error("Mei() returned nil")
-	}
-	if agents.Amara() == nil {
-		t.Error("Amara() returned nil")
+	// Check that non-existent agent returns false
+	if _, ok := agents.Get("nonexistent"); ok {
+		t.Error("Get(nonexistent) should return false")
 	}
 }
 
 func TestAgentsGet(t *testing.T) {
-	agents := NewAgents("/work")
+	// Create temp directory with test agent structure
+	tmpDir, err := os.MkdirTemp("", "agents_get_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create .maxam directory structure
+	maxamDir := filepath.Join(tmpDir, ".maxam")
+	agentsDir := filepath.Join(maxamDir, "agents")
+	aliceDir := filepath.Join(agentsDir, "alice")
+	if err := os.MkdirAll(aliceDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create CLAUDE.md for alice
+	if err := os.WriteFile(filepath.Join(aliceDir, "CLAUDE.md"), []byte("# Alice"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create config.yaml
+	configContent := `version: "1"
+default_agent: alice
+agents:
+  - name: alice
+    full_name: Alice Test
+    role: tester
+`
+	if err := os.WriteFile(filepath.Join(maxamDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	agents := NewAgents(tmpDir)
 
 	// Existing agent
-	r, ok := agents.Get("yuki")
+	r, ok := agents.Get("alice")
 	if !ok {
-		t.Error("Get(yuki) returned false")
+		t.Error("Get(alice) returned false")
 	}
 	if r == nil {
-		t.Error("Get(yuki) returned nil runner")
+		t.Error("Get(alice) returned nil runner")
 	}
 
 	// Non-existing agent
