@@ -39,21 +39,22 @@ type AgentConfig struct {
 // DefaultAnalysisMinMessages is the default minimum message count for analysis
 const DefaultAnalysisMinMessages = 10
 
-// DefaultConfig returns the default configuration
+// DefaultConfig returns the default configuration with no agents
+// Use "maxam team init" to set up team members
 func DefaultConfig() *Config {
 	return &Config{
 		Version:             "1",
-		DefaultAgent:        "mei",
 		AnalysisMinMessages: DefaultAnalysisMinMessages,
-		Agents: []AgentConfig{
-			{Name: "mei", FullName: "Mei Chen", Role: "PM / 要件定義"},
-			{Name: "yuki", FullName: "Yuki Tanaka", Role: "バックエンド / インフラ"},
-			{Name: "rin", FullName: "Rin Sato", Role: "フロントエンド"},
-			{Name: "shiori", FullName: "Shiori Tanaka", Role: "テスト / ドキュメント"},
-			{Name: "priya", FullName: "Priya Sharma", Role: "レビュー / セキュリティ / QA"},
-			{Name: "amara", FullName: "Amara Okonkwo", Role: "分析"},
-		},
+		Agents:              []AgentConfig{},
 	}
+}
+
+// ErrNoAgentsConfigured is returned when no agents are configured
+var ErrNoAgentsConfigured = fmt.Errorf("no agents configured. Please run 'maxam team init' first")
+
+// HasAgents returns true if at least one agent is configured
+func (c *Config) HasAgents() bool {
+	return len(c.Agents) > 0
 }
 
 // GetAnalysisMinMessages returns the analysis minimum messages with default fallback

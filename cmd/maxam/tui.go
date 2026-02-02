@@ -1426,6 +1426,17 @@ func getWorktreePath(agentName, rootDir, subProjectPath string) string {
 func runTeamChat() {
 	workDir := getWorkDir()
 
+	// Check if agents are configured
+	cfg, err := config.LoadWithProject(workDir)
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+	if !cfg.HasAgents() {
+		fmt.Fprintln(os.Stderr, "No team members configured.")
+		fmt.Fprintln(os.Stderr, "Please run 'maxam team init' first to set up your team.")
+		os.Exit(1)
+	}
+
 	p := tea.NewProgram(
 		initialTuiModel(workDir),
 		tea.WithAltScreen(),

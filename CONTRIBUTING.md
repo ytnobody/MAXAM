@@ -113,42 +113,58 @@ Closes #XX
 
 ## チームメンバーの追加
 
-新しいAIエージェントをチームに追加する際のチェックリスト。
+新しいAIエージェントをチームに追加する際の方法。
 
-### 変更が必要なファイル
+### 方法1: コマンドラインで追加（推奨）
 
-1. **`internal/config/config.go`** - `DefaultConfig()` に新メンバーを追加
-   ```go
-   {Name: "name", FullName: "Full Name", Role: "役割"},
-   ```
+```bash
+# 既存プロジェクトにメンバーを追加
+maxam team add <name> "<Full Name>" "<Role>"
 
-2. **`agents/{name}/CLAUDE.md`** - エージェントのペルソナファイルを作成
+# 例
+maxam team add alex "Alex Johnson" "QA / Test"
+```
+
+### 方法2: 対話形式で初期化
+
+```bash
+# チームを一から設定
+maxam team init
+```
+
+### 方法3: 設定ファイルを直接編集
+
+`.maxam/config.yaml` を編集:
+
+```yaml
+version: "1"
+default_agent: mei
+agents:
+  - name: mei
+    full_name: Mei Chen
+    role: PM / 要件定義
+  - name: alex
+    full_name: Alex Johnson
+    role: QA / Test
+```
+
+### カスタムペルソナの追加
+
+エージェントのペルソナをカスタマイズする場合:
+
+1. **`agents/{name}/CLAUDE.md`** - エージェントのペルソナファイルを作成
    - 既存エージェントのファイルを参考に
    - 性格、役割、行動規範を定義
 
-3. **`internal/agent/rules/CLAUDE.md`** - 共通規約のチームメンバー表を更新
-
-4. **`CLAUDE.md`** - ルートの共通規約のチームメンバー表を更新
-
-5. **`README.md`** - チームメンバー表を更新
-
-### 手順
-
-```bash
-# 1. ブランチ作成
-git checkout -b feature/add-agent-{name}
-
-# 2. config.go を編集（DefaultConfig に追加）
-# 3. agents/{name}/CLAUDE.md を作成
-# 4. 各ドキュメントのチームメンバー表を更新
-# 5. ビルド・テスト
-go build ./... && go test ./...
-
-# 6. コミット・PR作成
-```
+2. ビルド・テスト
+   ```bash
+   go build ./... && go test ./...
+   ```
 
 ### 備考
 
+- チームメンバーは設定ファイル（`.maxam/config.yaml`）で管理
+- コードへのハードコードは禁止（設定ファイルで管理）
 - `FullName` は必須。省略すると `Name` がそのまま使われる
 - ペルソナファイルは `agents/` 配下に配置
 - ビルド時に `agents/` は `~/.maxam/agents/` へ自動展開される
