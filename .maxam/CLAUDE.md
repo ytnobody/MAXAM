@@ -315,6 +315,121 @@ context_mode: summary  # or "full"（デフォルト）
 - レビュー → LGTM → GitHubアカウント制約でApprove不可 → オーナー確認 → マージ
 - 差し戻しゼロ、確認1回で完了
 
+#### ハードコード削除と初回セットアップガイダンス（PR #117より）
+
+**変更規模:** 6ファイル、+192/-55行、テスト3ケース追加
+
+**設計パターン:**
+
+1. **ゼロ設定での起動防止**
+   ```go
+   func DefaultConfig() *Config {
+       return &Config{
+           Version:             "1",
+           AnalysisMinMessages: DefaultAnalysisMinMessages,
+           Agents:              []AgentConfig{},  // 空配列
+       }
+   }
+   ```
+   - ハードコードされたエージェント情報を完全に削除
+   - 初期状態は「空」、ユーザーが明示的に設定する必要がある
+
+2. **未設定検出メソッドの追加**
+   ```go
+   func (c *Config) HasAgents() bool {
+       return len(c.Agents) > 0
+   }
+   ```
+   - シンプルな1行メソッドで状態チェック
+   - chat.go / tui.go 両方で利用
+
+3. **親切なエラーメッセージ**
+   ```
+   No team members configured.
+   Please run 'maxam team init' first to set up your team.
+   ```
+   - 何が問題か + どうすればいいかを1セットで伝える
+   - ユーザーが次のアクションを迷わない
+
+**テスト設計:**
+- 一時ディレクトリでテスト専用の設定を作成
+- グローバル設定に依存しない環境独立型
+- CI環境でも安定して動作
+
+**レビューポイント（Priyaより）:**
+- `DefaultConfig()`のハードコード削除OK
+- `HasAgents()`実装・テスト適切
+- chat.go/tui.goの未設定時メッセージOK
+- 「設計きれい」評価
+
+**ハードコード禁止規約との関係:**
+- PR #114で規約を追加、PR #117で実装
+- 規約と実装が連動して入る好例
+- 「ルールを作ったら即座に適合させる」パターン
+
+**差し戻し経緯:**
+- 初回: テストがグローバル設定に依存していてCI失敗
+- Yukiが一時ディレクトリ方式に修正
+- 2回目で通過、差し戻し1回（テスト環境依存）
+
+**教訓:**
+- テストはグローバル状態に依存しない設計が重要
+- `t.TempDir()` + 環境変数オーバーライドのパターンが有効
+
+#### 設定フィールド追加の好例（PR #119より）
+
+**変更規模:** 3ファイル、+106/-3行、テスト6ケース追加
+
+**設計パターン:**
+
+1. **オプショナルフィールドの追加**
+   ```go
+   type AgentConfig struct {
+       // ...既存フィールド
+       Color string `yaml:"color,omitempty"` // hex color code
+   }
+   ```
+   - `omitempty`で後方互換性を維持
+   - 未設定時は空文字（ゼロ値）
+
+2. **フォールバックパターンの適用**
+   ```go
+   func (m *tuiModel) getAgentStyle(name string) lipgloss.Style {
+       // 1. 設定から色を取得
+       if m.config != nil {
+           if color := m.config.GetAgentColor(name); color != "" {
+               return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Bold(true)
+           }
+       }
+       // 2. ハードコード色にフォールバック
+       switch name { ... }
+   }
+   ```
+   - 設定優先、なければデフォルト値
+   - 既存動作を壊さない安全な拡張
+
+3. **設定取得メソッドの追加**
+   ```go
+   func (c *Config) GetAgentColor(name string) string
+   ```
+   - 単一責任: 名前から色を引くだけ
+   - nilチェック不要（呼び出し側で`config != nil`を確認）
+
+**テスト設計:**
+- `TestAgentConfigColor`: フィールドの有無を確認（2ケース）
+- `TestGetAgentColor`: 取得ロジックを網羅（4ケース）
+  - 色設定あり / 別の色 / 空文字 / 存在しないエージェント
+
+**既存パターンとの関連:**
+- PR #74（設定拡張の好例）と同じパターン
+- PR #117（ハードコード削除）の延長線上
+- 「設定ファイルで管理」という方針の一貫した適用
+
+**チームフロー:**
+- 差し戻しゼロで一発通過
+- Priyaから「設計きれい」評価
+- GitHubアカウント制約 → オーナー確認 → マージ
+
 ---
 
 *このファイルはチームの学習により継続的に更新される*
