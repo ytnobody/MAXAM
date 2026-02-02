@@ -46,7 +46,7 @@ func NewChecker(agentNames []string) *Checker {
 		}
 	}
 
-	// Build pattern: @(name1|name2|Name1|Name2|...)
+	// Build pattern: @(name1|name2|Name1|Name2|オーナー|...)
 	var parts []string
 	for _, name := range agentNames {
 		lower := strings.ToLower(name)
@@ -59,6 +59,8 @@ func NewChecker(agentNames []string) *Checker {
 			}
 		}
 	}
+	// Always include @オーナー as a valid mention
+	parts = append(parts, "オーナー")
 
 	pattern := `@(` + strings.Join(parts, "|") + `)`
 	return &Checker{
@@ -75,7 +77,7 @@ func (c *Checker) Check(message string) Result {
 	// メンションの検出
 	result.HasMention = c.mentionPattern.MatchString(message)
 
-	// 依頼パターンの検出
+	// 依頼パターンの検出（ログ・分析用に残す）
 	lower := strings.ToLower(message)
 	for _, pattern := range requestPatterns {
 		if pattern.MatchString(lower) || pattern.MatchString(message) {
@@ -89,8 +91,8 @@ func (c *Checker) Check(message string) Result {
 		}
 	}
 
-	// 依頼パターンがあるのにメンションがない場合は警告
-	result.NeedsWarning = result.HasRequestPattern && !result.HasMention
+	// すべてのメッセージにメンション必須：メンションがなければ警告
+	result.NeedsWarning = !result.HasMention
 
 	return result
 }

@@ -6,127 +6,97 @@ import (
 
 func TestCheck(t *testing.T) {
 	tests := []struct {
-		name         string
-		message      string
-		wantWarning  bool
-		wantRequest  bool
-		wantMention  bool
+		name        string
+		message     string
+		wantWarning bool
+		wantRequest bool
+		wantMention bool
 	}{
-		// 警告が必要なケース（依頼あり、メンションなし）
+		// 警告が必要なケース（メンションなし）- 新仕様：全メッセージにメンション必須
 		{
-			name:        "request without mention - onegai",
+			name:        "no mention - request pattern",
 			message:     "これお願い",
 			wantWarning: true,
 			wantRequest: true,
 			wantMention: false,
 		},
 		{
-			name:        "request without mention - shite",
-			message:     "確認して",
+			name:        "no mention - simple statement",
+			message:     "これはただのコメントです",
 			wantWarning: true,
-			wantRequest: true,
+			wantRequest: false,
 			wantMention: false,
 		},
 		{
-			name:        "request without mention - review",
-			message:     "レビューしてください",
+			name:        "no mention - question",
+			message:     "どう思う？",
 			wantWarning: true,
-			wantRequest: true,
+			wantRequest: false,
 			wantMention: false,
 		},
 		{
-			name:        "request without mention - yoroshiku",
-			message:     "よろしくお願いします",
+			name:        "no mention - completion report",
+			message:     "実装完了しました",
 			wantWarning: true,
-			wantRequest: true,
-			wantMention: false,
-		},
-		{
-			name:        "request without mention - tanomu",
-			message:     "実装頼む",
-			wantWarning: true,
-			wantRequest: true,
-			wantMention: false,
-		},
-		{
-			name:        "request without mention - dekiru",
-			message:     "これできる?",
-			wantWarning: true,
-			wantRequest: true,
+			wantRequest: false,
 			wantMention: false,
 		},
 
-		// 警告不要なケース（依頼あり、メンションあり）
+		// 警告不要なケース（メンションあり）
 		{
-			name:        "request with mention yuki",
+			name:        "with mention yuki",
 			message:     "@yuki これお願い",
 			wantWarning: false,
 			wantRequest: true,
 			wantMention: true,
 		},
 		{
-			name:        "request with mention priya",
+			name:        "with mention priya",
 			message:     "@priya レビューして",
 			wantWarning: false,
 			wantRequest: true,
 			wantMention: true,
 		},
 		{
-			name:        "request with mention amara",
+			name:        "with mention amara",
 			message:     "@amara 分析してほしい",
 			wantWarning: false,
 			wantRequest: true,
 			wantMention: true,
 		},
 		{
-			name:        "request with mention mei",
+			name:        "with mention mei",
 			message:     "@mei 確認お願いします",
 			wantWarning: false,
 			wantRequest: true,
 			wantMention: true,
 		},
 		{
-			name:        "request with mention rin",
+			name:        "with mention rin",
 			message:     "@rin UI作成して",
 			wantWarning: false,
 			wantRequest: true,
 			wantMention: true,
 		},
 		{
-			name:        "request with mention shiori",
+			name:        "with mention shiori",
 			message:     "@shiori テストお願い",
 			wantWarning: false,
 			wantRequest: true,
 			wantMention: true,
 		},
-
-		// 警告不要なケース（依頼なし）
 		{
-			name:        "no request pattern",
-			message:     "これはただのコメントです",
-			wantWarning: false,
-			wantRequest: false,
-			wantMention: false,
-		},
-		{
-			name:        "question without request",
-			message:     "どう思う？",
-			wantWarning: false,
-			wantRequest: false,
-			wantMention: false,
-		},
-		{
-			name:        "statement",
-			message:     "実装完了しました",
-			wantWarning: false,
-			wantRequest: false,
-			wantMention: false,
-		},
-		{
-			name:        "mention without request",
+			name:        "with mention - no request pattern",
 			message:     "@yuki 完了したよ",
 			wantWarning: false,
 			wantRequest: false,
+			wantMention: true,
+		},
+		{
+			name:        "with owner mention",
+			message:     "@オーナー 確認お願いします",
+			wantWarning: false,
+			wantRequest: true,
 			wantMention: true,
 		},
 
@@ -134,7 +104,7 @@ func TestCheck(t *testing.T) {
 		{
 			name:        "empty message",
 			message:     "",
-			wantWarning: false,
+			wantWarning: true, // 空でもメンションがないので警告
 			wantRequest: false,
 			wantMention: false,
 		},
@@ -150,6 +120,13 @@ func TestCheck(t *testing.T) {
 			message:     "@Yuki お願い",
 			wantWarning: false,
 			wantRequest: true,
+			wantMention: true,
+		},
+		{
+			name:        "owner and member mention",
+			message:     "@オーナー @Mei 相談があります",
+			wantWarning: false,
+			wantRequest: false,
 			wantMention: true,
 		},
 	}
@@ -180,9 +157,9 @@ func TestFormatWarning(t *testing.T) {
 
 func TestNewChecker(t *testing.T) {
 	tests := []struct {
-		name       string
-		agentNames []string
-		message    string
+		name        string
+		agentNames  []string
+		message     string
 		wantMention bool
 	}{
 		{
@@ -207,6 +184,18 @@ func TestNewChecker(t *testing.T) {
 			name:        "empty agents - any mention matches",
 			agentNames:  []string{},
 			message:     "@anyone お願い",
+			wantMention: true,
+		},
+		{
+			name:        "owner mention always works",
+			agentNames:  []string{"alice", "bob"},
+			message:     "@オーナー お願い",
+			wantMention: true,
+		},
+		{
+			name:        "owner mention with custom agents",
+			agentNames:  []string{"custom"},
+			message:     "@オーナー 確認",
 			wantMention: true,
 		},
 	}
