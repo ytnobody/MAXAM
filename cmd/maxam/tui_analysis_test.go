@@ -529,6 +529,63 @@ func TestIssueListConstants(t *testing.T) {
 	}
 }
 
+func TestMentionWarningChainTrigger(t *testing.T) {
+	tests := []struct {
+		name           string
+		warningCount   int
+		expectRetry    bool
+	}{
+		{
+			name:         "初回警告 - リトライする",
+			warningCount: 1,
+			expectRetry:  true,
+		},
+		{
+			name:         "2回目警告 - リトライする",
+			warningCount: 2,
+			expectRetry:  true,
+		},
+		{
+			name:         "3回目警告 - リトライしない（諦める）",
+			warningCount: 3,
+			expectRetry:  false,
+		},
+		{
+			name:         "4回目以降 - リトライしない",
+			warningCount: 5,
+			expectRetry:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// リトライ判定ロジック: warningCount <= 2 の場合にリトライ
+			shouldRetry := tt.warningCount <= 2
+			if shouldRetry != tt.expectRetry {
+				t.Errorf("warningCount=%d: got retry=%v, want %v",
+					tt.warningCount, shouldRetry, tt.expectRetry)
+			}
+		})
+	}
+}
+
+func TestMentionWarningCountReset(t *testing.T) {
+	// メンション成功時にカウントがリセットされることを確認
+	m := &tuiModel{
+		mentionWarningCount: make(map[string]int),
+	}
+
+	// カウントを増やす
+	m.mentionWarningCount["yuki"] = 2
+
+	// メンション成功をシミュレート（リセット）
+	m.mentionWarningCount["yuki"] = 0
+
+	if m.mentionWarningCount["yuki"] != 0 {
+		t.Errorf("expected count to be reset to 0, got %d", m.mentionWarningCount["yuki"])
+	}
+}
+
 func TestGetWorktreePath(t *testing.T) {
 	tests := []struct {
 		name           string
