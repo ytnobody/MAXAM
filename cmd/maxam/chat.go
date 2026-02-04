@@ -38,6 +38,18 @@ func runChat() {
 	agentName := strings.ToLower(os.Args[2])
 	workDir := getWorkDir()
 
+	// Ensure project .maxam/ directory is initialized
+	if !config.IsProjectInitialized(workDir) {
+		if err := config.EnsureProjectInitialized(workDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize .maxam/: %v\n", err)
+		} else {
+			fmt.Println("Created .maxam/ with default configuration files.")
+			fmt.Println("- .maxam/config.yaml")
+			fmt.Println("- .maxam/CLAUDE.md")
+			fmt.Println()
+		}
+	}
+
 	// Check if agents are configured
 	cfg, err := config.LoadWithProject(workDir)
 	if err != nil {

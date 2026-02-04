@@ -823,3 +823,127 @@ func TestGetTeamName(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureProjectInitialized(t *testing.T) {
+	projectDir := t.TempDir()
+
+	// 初期化前は.maxamが存在しない
+	configDir := ProjectConfigDir(projectDir)
+	if _, err := os.Stat(configDir); !os.IsNotExist(err) {
+		t.Error(".maxam should not exist before initialization")
+	}
+
+	// 初期化実行
+	if err := EnsureProjectInitialized(projectDir); err != nil {
+		t.Fatalf("EnsureProjectInitialized() error: %v", err)
+	}
+
+	// config.yamlが作成されている
+	configPath := filepath.Join(configDir, "config.yaml")
+	if _, err := os.Stat(configPath); err != nil {
+		t.Errorf("config.yaml not created: %v", err)
+	}
+
+	// CLAUDE.mdが作成されている
+	claudeMDPath := filepath.Join(configDir, "CLAUDE.md")
+	if _, err := os.Stat(claudeMDPath); err != nil {
+		t.Errorf("CLAUDE.md not created: %v", err)
+	}
+
+	// 内容確認（config.yaml）
+	configContent, _ := os.ReadFile(configPath)
+	if !contains(string(configContent), "version:") {
+		t.Error("config.yaml should contain version")
+	}
+
+	// 内容確認（CLAUDE.md）
+	claudeContent, _ := os.ReadFile(claudeMDPath)
+	if !contains(string(claudeContent), "## Team Members") {
+		t.Error("CLAUDE.md should contain Team Members section")
+	}
+}
+
+func TestEnsureProjectInitializedNoOverwrite(t *testing.T) {
+	projectDir := t.TempDir()
+
+	// 既存ファイルを作成
+	configDir := ProjectConfigDir(projectDir)
+	os.MkdirAll(configDir, 0755)
+
+	existingConfig := "# existing config\nversion: \"99\"\n"
+	existingClaudeMD := "# existing CLAUDE.md\n"
+
+	os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(existingConfig), 0644)
+	os.WriteFile(filepath.Join(configDir, "CLAUDE.md"), []byte(existingClaudeMD), 0644)
+
+	// 初期化実行
+	if err := EnsureProjectInitialized(projectDir); err != nil {
+		t.Fatalf("EnsureProjectInitialized() error: %v", err)
+	}
+
+	// 既存ファイルが上書きされていない
+	configContent, _ := os.ReadFile(filepath.Join(configDir, "config.yaml"))
+	if string(configContent) != existingConfig {
+		t.Errorf("config.yaml was overwritten: got %q, want %q", string(configContent), existingConfig)
+	}
+
+	claudeContent, _ := os.ReadFile(filepath.Join(configDir, "CLAUDE.md"))
+	if string(claudeContent) != existingClaudeMD {
+		t.Errorf("CLAUDE.md was overwritten: got %q, want %q", string(claudeContent), existingClaudeMD)
+	}
+}
+
+func TestIsProjectInitialized(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func(string)
+		expected  bool
+	}{
+		{
+			name: "初期化されていない",
+			setup: func(dir string) {
+				// 何もしない
+			},
+			expected: false,
+		},
+		{
+			name: "初期化済み",
+			setup: func(dir string) {
+				EnsureProjectInitialized(dir)
+			},
+			expected: true,
+		},
+		{
+			name: ".maxamディレクトリのみ（config.yamlなし）",
+			setup: func(dir string) {
+				os.MkdirAll(ProjectConfigDir(dir), 0755)
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectDir := t.TempDir()
+			tt.setup(projectDir)
+
+			got := IsProjectInitialized(projectDir)
+			if got != tt.expected {
+				t.Errorf("IsProjectInitialized() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
