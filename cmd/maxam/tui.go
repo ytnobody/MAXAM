@@ -15,6 +15,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
+	"github.com/ytnobody/MAXAM/internal/agent/worker"
 	"github.com/ytnobody/MAXAM/internal/ccusage"
 	"github.com/ytnobody/MAXAM/internal/config"
 	"github.com/ytnobody/MAXAM/internal/errorwatch"
@@ -174,6 +175,9 @@ type tuiModel struct {
 
 	// Error detection and automatic follow-up
 	errorDetector *errorwatch.Detector
+
+	// Worker pool for goroutine separation
+	workerPool *worker.Pool
 }
 
 type agentResponseMsg struct {
@@ -268,8 +272,18 @@ func initialTuiModel(workDir string) tuiModel {
 
 	members := member.NewMembers(workDir)
 
+	// Setup agents and worker pool
+	agents := agent.NewAgents(workDir)
+	workerPool := worker.NewPool()
+	for _, name := range agents.All() {
+		if runner, ok := agents.Get(name); ok {
+			w := worker.NewWorker(name, runner)
+			workerPool.Add(w)
+		}
+	}
+
 	return tuiModel{
-		agents:              agent.NewAgents(workDir),
+		agents:              agents,
 		members:             members,
 		router:              agentRouter,
 		logMgr:              logger.NewManager(logger.GetDefaultLogDir(), workDir),
@@ -290,6 +304,7 @@ func initialTuiModel(workDir string) tuiModel {
 		analysisMinMessages: cfg.GetAnalysisMinMessages(),
 		yoloMode:            cfg.YOLOMode,
 		errorDetector:       errorwatch.DefaultDetector(),
+		workerPool:          workerPool,
 	}
 }
 
@@ -313,6 +328,11 @@ type ccusageUpdateMsg struct {
 type ccusageTickMsg struct{}
 
 func (m tuiModel) Init() tea.Cmd {
+	// Start worker pool
+	if m.workerPool != nil {
+		m.workerPool.StartAll()
+	}
+
 	cmds := []tea.Cmd{textinput.Blink, tea.EnterAltScreen, m.tickAnalysis()}
 	if m.taskWatcher != nil {
 		cmds = append(cmds, m.watchTaskFile())
@@ -395,6 +415,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.taskWatcher != nil {
 				m.taskWatcher.Close()
 			}
+			if m.workerPool != nil {
+				m.workerPool.StopAll()
+			}
 			return m, tea.Quit
 
 		case tea.KeyCtrlL:
@@ -437,6 +460,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logMgr.Close()
 				if m.taskWatcher != nil {
 					m.taskWatcher.Close()
+				}
+				if m.workerPool != nil {
+					m.workerPool.StopAll()
 				}
 				return m, tea.Quit
 			}
@@ -769,6 +795,34 @@ func (m *tuiModel) runAgentAsync(input string, targetAgent string, depth int) te
 			prompt = m.buildPrompt(agentName, input)
 		}
 
+		// Try to use worker pool first
+		if m.workerPool != nil {
+			if w, ok := m.workerPool.Get(agentName); ok {
+				responseChan := make(chan worker.ChatResponse, 1)
+				w.SendChat(prompt, responseChan)
+
+				// Wait for response
+				resp := <-responseChan
+				result := strings.TrimSpace(resp.Content)
+
+				// 返答内の他エージェントへのメンションを検出（複数対応）
+				var nextAgents []string
+				if depth < maxChainDepth && resp.Err == nil {
+					nextAgents = m.detectAgentMentions(result, agentName)
+				}
+
+				return agentResponseMsg{
+					agent:      agentName,
+					content:    result,
+					elapsed:    resp.Elapsed,
+					err:        resp.Err,
+					nextAgents: nextAgents,
+					chainDepth: depth,
+				}
+			}
+		}
+
+		// Fallback to direct runner execution
 		runner, _ := m.agents.Get(agentName)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
