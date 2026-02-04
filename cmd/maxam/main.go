@@ -63,6 +63,7 @@ Usage:
 Commands:
   (none)               Launch team chat TUI (default)
   chat <agent>         Interactive chat with an agent (mei/yuki/rin/shiori/priya/amara/team)
+  chat team --daemon   Daemon mode: wait for input continuously (for external integration)
   task <description>   Submit a task to Yuki for implementation
   task add <title>     Add a task to the taskboard
   task list            List all tasks on the taskboard
