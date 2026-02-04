@@ -17,13 +17,21 @@ import (
 	"github.com/ytnobody/MAXAM/internal/mention"
 )
 
+// chatFlags holds parsed command line flags for chat command
+type chatFlags struct {
+	agentName    string
+	daemon       bool
+	mentionCheck bool
+}
+
 // ChatSession manages an interactive conversation with an agent
 type ChatSession struct {
-	agents  *agent.Agents
-	members *member.Members
-	logMgr  *logger.Manager
-	workDir string
-	history []chatMessage
+	agents       *agent.Agents
+	members      *member.Members
+	logMgr       *logger.Manager
+	workDir      string
+	history      []chatMessage
+	mentionCheck bool
 }
 
 type chatMessage struct {
@@ -31,17 +39,52 @@ type chatMessage struct {
 	content string
 }
 
+// parseChatFlags parses command line arguments for chat command
+func parseChatFlags(args []string) chatFlags {
+	flags := chatFlags{
+		mentionCheck: true, // default: on
+	}
+
+	if len(args) < 3 {
+		return flags
+	}
+
+	flags.agentName = strings.ToLower(args[2])
+
+	// Parse remaining flags
+	for i := 3; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--daemon":
+			flags.daemon = true
+			// daemon mode: default mention check to false
+			flags.mentionCheck = false
+		case arg == "--mention-check":
+			flags.mentionCheck = true
+		case arg == "--mention-check=true":
+			flags.mentionCheck = true
+		case arg == "--mention-check=false":
+			flags.mentionCheck = false
+		case arg == "--no-mention-check":
+			flags.mentionCheck = false
+		}
+	}
+
+	return flags
+}
+
 func runChat() {
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "Usage: maxam chat <agent> [--daemon]")
+		fmt.Fprintln(os.Stderr, "Usage: maxam chat <agent> [flags]")
 		fmt.Fprintln(os.Stderr, "Agents: (run 'maxam team list' to see configured agents)")
 		fmt.Fprintln(os.Stderr, "Flags:")
-		fmt.Fprintln(os.Stderr, "  --daemon  Run in daemon mode (wait for input continuously)")
+		fmt.Fprintln(os.Stderr, "  --daemon          Run in daemon mode (wait for input continuously)")
+		fmt.Fprintln(os.Stderr, "  --mention-check   Enable mention checker (default: on, off in daemon mode)")
+		fmt.Fprintln(os.Stderr, "  --no-mention-check  Disable mention checker")
 		os.Exit(1)
 	}
 
-	agentName := strings.ToLower(os.Args[2])
-	daemon := len(os.Args) > 3 && os.Args[3] == "--daemon"
+	flags := parseChatFlags(os.Args)
 	workDir := getWorkDir()
 
 	// Ensure project .maxam/ directory is initialized
@@ -68,22 +111,23 @@ func runChat() {
 	}
 
 	session := &ChatSession{
-		agents:  agent.NewAgents(workDir),
-		members: member.NewMembers(workDir),
-		logMgr:  logger.NewManager(logger.GetDefaultLogDir(), workDir),
-		workDir: workDir,
-		history: make([]chatMessage, 0),
+		agents:       agent.NewAgents(workDir),
+		members:      member.NewMembers(workDir),
+		logMgr:       logger.NewManager(logger.GetDefaultLogDir(), workDir),
+		workDir:      workDir,
+		history:      make([]chatMessage, 0),
+		mentionCheck: flags.mentionCheck,
 	}
 	defer session.logMgr.Close()
 
-	if agentName == "team" {
-		if daemon {
+	if flags.agentName == "team" {
+		if flags.daemon {
 			session.runTeamChatDaemon()
 		} else {
 			session.runTeamChat()
 		}
 	} else {
-		session.runAgentChat(agentName)
+		session.runAgentChat(flags.agentName)
 	}
 }
 
@@ -148,8 +192,10 @@ func (s *ChatSession) runAgentChat(agentName string) {
 		fmt.Println(result)
 
 		// Check for mention leaks in agent response
-		if checkResult := mention.Check(result); checkResult.NeedsWarning {
-			fmt.Printf("⚠️  %s\n", mention.FormatWarning())
+		if s.mentionCheck {
+			if checkResult := mention.Check(result); checkResult.NeedsWarning {
+				fmt.Printf("⚠️  %s\n", mention.FormatWarning())
+			}
 		}
 
 		s.history = append(s.history, chatMessage{role: agentName, content: result})
@@ -227,8 +273,10 @@ func (s *ChatSession) runTeamChat() {
 			fmt.Println(result)
 
 			// Check for mention leaks in agent response
-			if checkResult := mention.Check(result); checkResult.NeedsWarning {
-				fmt.Printf("⚠️  %s\n", mention.FormatWarning())
+			if s.mentionCheck {
+				if checkResult := mention.Check(result); checkResult.NeedsWarning {
+					fmt.Printf("⚠️  %s\n", mention.FormatWarning())
+				}
 			}
 
 			s.history = append(s.history, chatMessage{role: agentName, content: result})
@@ -308,8 +356,10 @@ func (s *ChatSession) processTeamMessage(input string) {
 		fmt.Println(result)
 
 		// Check for mention leaks in agent response
-		if checkResult := mention.Check(result); checkResult.NeedsWarning {
-			fmt.Printf("⚠️  %s\n", mention.FormatWarning())
+		if s.mentionCheck {
+			if checkResult := mention.Check(result); checkResult.NeedsWarning {
+				fmt.Printf("⚠️  %s\n", mention.FormatWarning())
+			}
 		}
 
 		s.history = append(s.history, chatMessage{role: agentName, content: result})
