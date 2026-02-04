@@ -1148,3 +1148,107 @@ func TestDefaultMaxInstances(t *testing.T) {
 		t.Errorf("DefaultMaxInstances = %d, want 3", DefaultMaxInstances)
 	}
 }
+
+func TestIsMentionCheckerEnabled(t *testing.T) {
+	trueVal := true
+	falseVal := false
+
+	tests := []struct {
+		name     string
+		cfg      *Config
+		expected bool
+	}{
+		{
+			name:     "デフォルト（nil）はtrue",
+			cfg:      &Config{},
+			expected: true,
+		},
+		{
+			name:     "明示的にtrue",
+			cfg:      &Config{MentionCheckerEnabled: &trueVal},
+			expected: true,
+		},
+		{
+			name:     "明示的にfalse",
+			cfg:      &Config{MentionCheckerEnabled: &falseVal},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.IsMentionCheckerEnabled()
+			if got != tt.expected {
+				t.Errorf("IsMentionCheckerEnabled() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSetMentionCheckerEnabled(t *testing.T) {
+	cfg := &Config{}
+
+	// 初期状態（nil）
+	if cfg.MentionCheckerEnabled != nil {
+		t.Error("MentionCheckerEnabled should be nil initially")
+	}
+
+	// trueに設定
+	cfg.SetMentionCheckerEnabled(true)
+	if cfg.MentionCheckerEnabled == nil || !*cfg.MentionCheckerEnabled {
+		t.Error("SetMentionCheckerEnabled(true) failed")
+	}
+
+	// falseに設定
+	cfg.SetMentionCheckerEnabled(false)
+	if cfg.MentionCheckerEnabled == nil || *cfg.MentionCheckerEnabled {
+		t.Error("SetMentionCheckerEnabled(false) failed")
+	}
+}
+
+func TestMergeConfigsMentionChecker(t *testing.T) {
+	trueVal := true
+	falseVal := false
+
+	tests := []struct {
+		name     string
+		base     *Config
+		override *Config
+		expected bool
+	}{
+		{
+			name:     "base=nil, override=nil → default true",
+			base:     &Config{},
+			override: &Config{},
+			expected: true,
+		},
+		{
+			name:     "base=true, override=nil → true",
+			base:     &Config{MentionCheckerEnabled: &trueVal},
+			override: &Config{},
+			expected: true,
+		},
+		{
+			name:     "base=nil, override=false → false",
+			base:     &Config{},
+			override: &Config{MentionCheckerEnabled: &falseVal},
+			expected: false,
+		},
+		{
+			name:     "base=true, override=false → false",
+			base:     &Config{MentionCheckerEnabled: &trueVal},
+			override: &Config{MentionCheckerEnabled: &falseVal},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			merged := mergeConfigs(tt.base, tt.override)
+			got := merged.IsMentionCheckerEnabled()
+			if got != tt.expected {
+				t.Errorf("IsMentionCheckerEnabled() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}

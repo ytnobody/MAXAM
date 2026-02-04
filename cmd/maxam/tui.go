@@ -185,6 +185,9 @@ type tuiModel struct {
 	// Issue list on idle
 	lastIssueListTime time.Time // 最後にIssue一覧を投稿した時刻
 	ghClient          *gh.Client // GitHub client for issue list
+
+	// Mention checker toggle
+	mentionCheckerEnabled bool
 }
 
 type agentResponseMsg struct {
@@ -295,30 +298,31 @@ func initialTuiModel(workDir string) tuiModel {
 	}
 
 	return tuiModel{
-		agents:              agents,
-		members:             members,
-		router:              agentRouter,
-		logMgr:              logger.NewManager(logger.GetDefaultLogDir(), workDir),
-		history:             hist,
-		workDir:             workDir,
-		config:              cfg,
-		textInput:           ti,
-		messages:            messages,
-		inputHist:           make([]string, 0),
-		processingAgents:    make(map[string]bool),
-		histIdx:             -1,
-		currentView:         viewChat,
-		tasklist:            tasklistModel,
-		taskService:         taskService,
-		taskWatcher:         taskWatcher,
-		prWatcher:           prWatcher,
-		ccusageClient:       ccClient,
-		analysisMinMessages: cfg.GetAnalysisMinMessages(),
-		yoloMode:            cfg.YOLOMode,
-		errorDetector:       errorwatch.DefaultDetector(),
-		workerPool:          workerPool,
-		ghClient:            ghClient,
-		mentionWarningCount: make(map[string]int),
+		agents:                agents,
+		members:               members,
+		router:                agentRouter,
+		logMgr:                logger.NewManager(logger.GetDefaultLogDir(), workDir),
+		history:               hist,
+		workDir:               workDir,
+		config:                cfg,
+		textInput:             ti,
+		messages:              messages,
+		inputHist:             make([]string, 0),
+		processingAgents:      make(map[string]bool),
+		histIdx:               -1,
+		currentView:           viewChat,
+		tasklist:              tasklistModel,
+		taskService:           taskService,
+		taskWatcher:           taskWatcher,
+		prWatcher:             prWatcher,
+		ccusageClient:         ccClient,
+		analysisMinMessages:   cfg.GetAnalysisMinMessages(),
+		yoloMode:              cfg.YOLOMode,
+		errorDetector:         errorwatch.DefaultDetector(),
+		workerPool:            workerPool,
+		ghClient:              ghClient,
+		mentionWarningCount:   make(map[string]int),
+		mentionCheckerEnabled: cfg.IsMentionCheckerEnabled(),
 	}
 }
 
@@ -448,6 +452,20 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlY:
 			// Toggle YOLO mode
 			m.yoloMode = !m.yoloMode
+			return m, nil
+
+		case tea.KeyCtrlN:
+			// Toggle mention checker
+			m.mentionCheckerEnabled = !m.mentionCheckerEnabled
+			// Save to config
+			m.config.SetMentionCheckerEnabled(m.mentionCheckerEnabled)
+			if err := config.SaveToProject(m.workDir, m.config); err != nil {
+				// Silent fail, just toggle in memory
+			}
+			// Clear warning if disabled
+			if !m.mentionCheckerEnabled {
+				m.mentionWarning = ""
+			}
 			return m, nil
 
 		case tea.KeyTab:
@@ -765,28 +783,30 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			content: msg.content,
 		})
 
-		// Check for mention leaks in agent response and add to history
+		// Check for mention leaks in agent response and add to history (if enabled)
 		m.mentionWarning = ""
-		mentionResult := mention.Check(msg.content)
 		var triggerRetry bool
-		if mentionResult.NeedsWarning {
-			m.mentionWarning = mention.FormatWarning()
-			// Add warning to messages and history for agent responses
-			warningMsg := mention.FormatSystemWarning(m.getFullName(msg.agent))
-			m.messages = append(m.messages, tuiMessage{role: "system", content: warningMsg})
-			if m.history != nil {
-				m.history.Add("system", warningMsg)
-			}
+		if m.mentionCheckerEnabled {
+			mentionResult := mention.Check(msg.content)
+			if mentionResult.NeedsWarning {
+				m.mentionWarning = mention.FormatWarning()
+				// Add warning to messages and history for agent responses
+				warningMsg := mention.FormatSystemWarning(m.getFullName(msg.agent))
+				m.messages = append(m.messages, tuiMessage{role: "system", content: warningMsg})
+				if m.history != nil {
+					m.history.Add("system", warningMsg)
+				}
 
-			// Increment consecutive warning count for this agent
-			m.mentionWarningCount[msg.agent]++
-			// Trigger retry if this is the first or second warning (allow 2 attempts)
-			if m.mentionWarningCount[msg.agent] <= 2 {
-				triggerRetry = true
+				// Increment consecutive warning count for this agent
+				m.mentionWarningCount[msg.agent]++
+				// Trigger retry if this is the first or second warning (allow 2 attempts)
+				if m.mentionWarningCount[msg.agent] <= 2 {
+					triggerRetry = true
+				}
+			} else {
+				// Reset warning count on successful mention
+				m.mentionWarningCount[msg.agent] = 0
 			}
-		} else {
-			// Reset warning count on successful mention
-			m.mentionWarningCount[msg.agent] = 0
 		}
 
 		// projectContextを初回送信済みとしてマーク
@@ -844,8 +864,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.textInput, tiCmd = m.textInput.Update(msg)
 	cmds = append(cmds, tiCmd)
 
-	// Check for mention leaks in real-time as user types
-	if m.currentView == viewChat {
+	// Check for mention leaks in real-time as user types (if enabled)
+	if m.currentView == viewChat && m.mentionCheckerEnabled {
 		input := m.textInput.Value()
 		result := mention.Check(input)
 		if result.NeedsWarning {
@@ -1147,16 +1167,19 @@ func (m tuiModel) View() string {
 
 	// Header - ビューに応じてタイトルを切り替え（行全体に背景色）
 	var headerContent string
-	var yoloIndicator string
+	var modeIndicators string
 	if m.yoloMode {
-		yoloIndicator = " " + yoloStyle.Render("YOLO")
+		modeIndicators += " " + yoloStyle.Render("YOLO")
+	}
+	if !m.mentionCheckerEnabled {
+		modeIndicators += " " + helpStyle.Render("[M:OFF]")
 	}
 	if m.currentView == viewTaskboard {
-		headerContent = titleStyle.Render("MAXAM "+Version) + yoloIndicator + "  " +
+		headerContent = titleStyle.Render("MAXAM "+Version) + modeIndicators + "  " +
 			helpStyle.Render("Task Board | Tab:チャット | ↑↓:選択 Enter:ステータス変更 d:削除")
 	} else {
-		headerContent = titleStyle.Render("MAXAM "+Version) + yoloIndicator + "  " +
-			helpStyle.Render("Team Chat | Tab:タスクボード | Ctrl+Y:YOLO | Ctrl+L:再描画")
+		headerContent = titleStyle.Render("MAXAM "+Version) + modeIndicators + "  " +
+			helpStyle.Render("Team Chat | Tab:タスクボード | Ctrl+Y:YOLO | Ctrl+N:メンション | Ctrl+L:再描画")
 	}
 	// 行全体に背景色を適用（幅いっぱいにパディング）
 	header := headerStyle.Width(m.width).Render(headerContent)
