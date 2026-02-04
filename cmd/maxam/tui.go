@@ -490,16 +490,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.history.Add("user", input)
 			}
 
-			// Check for mention leak and add system warning if needed
-			result := mention.Check(input)
-			if result.NeedsWarning {
-				warningMsg := mention.FormatSystemWarning("オーナー")
-				m.messages = append(m.messages, tuiMessage{role: "system", content: warningMsg})
-				if m.history != nil {
-					m.history.Add("system", warningMsg)
-				}
-			}
-
 			m.updateViewport()
 
 			// 複数メンション対応: 検出されたエージェント全員に並列でリクエスト
@@ -716,11 +706,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			content: msg.content,
 		})
 
-		// Check for mention leaks in agent response
+		// Check for mention leaks in agent response and add to history
 		m.mentionWarning = ""
 		result := mention.Check(msg.content)
 		if result.NeedsWarning {
 			m.mentionWarning = mention.FormatWarning()
+			// Add warning to messages and history for agent responses
+			warningMsg := mention.FormatSystemWarning(m.getFullName(msg.agent))
+			m.messages = append(m.messages, tuiMessage{role: "system", content: warningMsg})
+			if m.history != nil {
+				m.history.Add("system", warningMsg)
+			}
 		}
 
 		// projectContextを初回送信済みとしてマーク
