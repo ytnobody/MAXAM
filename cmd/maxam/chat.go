@@ -12,6 +12,7 @@ import (
 	"github.com/ytnobody/MAXAM/internal/config"
 	"github.com/ytnobody/MAXAM/internal/logger"
 	"github.com/ytnobody/MAXAM/internal/member"
+	"github.com/ytnobody/MAXAM/internal/mention"
 )
 
 // ChatSession manages an interactive conversation with an agent
@@ -117,6 +118,11 @@ func (s *ChatSession) runAgentChat(agentName string) {
 		result = strings.TrimSpace(result)
 		fmt.Println(result)
 
+		// Check for mention leaks in agent response
+		if checkResult := mention.Check(result); checkResult.NeedsWarning {
+			fmt.Printf("⚠️  %s\n", mention.FormatWarning())
+		}
+
 		s.history = append(s.history, chatMessage{role: agentName, content: result})
 
 		// Log
@@ -182,6 +188,11 @@ func (s *ChatSession) runTeamChat() {
 
 			result = strings.TrimSpace(result)
 			fmt.Println(result)
+
+			// Check for mention leaks in agent response
+			if checkResult := mention.Check(result); checkResult.NeedsWarning {
+				fmt.Printf("⚠️  %s\n", mention.FormatWarning())
+			}
 
 			s.history = append(s.history, chatMessage{role: agentName, content: result})
 		}
