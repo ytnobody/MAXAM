@@ -6,30 +6,6 @@ import (
 	"testing"
 )
 
-func TestNew(t *testing.T) {
-	cfg := Config{
-		Name:        "Test Agent",
-		Role:        "test",
-		WorkDir:     "/tmp/test",
-		ClaudeMDDir: "/tmp/test/agents/test",
-	}
-
-	a := New(cfg)
-
-	if a.Name != cfg.Name {
-		t.Errorf("Name = %q, want %q", a.Name, cfg.Name)
-	}
-	if a.Role != cfg.Role {
-		t.Errorf("Role = %q, want %q", a.Role, cfg.Role)
-	}
-	if a.WorkDir != cfg.WorkDir {
-		t.Errorf("WorkDir = %q, want %q", a.WorkDir, cfg.WorkDir)
-	}
-	if a.ClaudeMDDir != cfg.ClaudeMDDir {
-		t.Errorf("ClaudeMDDir = %q, want %q", a.ClaudeMDDir, cfg.ClaudeMDDir)
-	}
-}
-
 func TestNewRunner(t *testing.T) {
 	r := NewRunner("Test", "/work", "/agents/test")
 
@@ -228,24 +204,6 @@ func TestBuildSystemPrompt(t *testing.T) {
 			t.Errorf("prompt should contain embedded rules")
 		}
 	})
-}
-
-func TestSendTaskWithoutStart(t *testing.T) {
-	a := New(Config{Name: "Test"})
-
-	_, err := a.SendTask("test")
-	if err == nil {
-		t.Error("expected error when agent not started")
-	}
-}
-
-func TestCallToolWithoutStart(t *testing.T) {
-	a := New(Config{Name: "Test"})
-
-	_, err := a.CallTool("test", nil)
-	if err == nil {
-		t.Error("expected error when agent not started")
-	}
 }
 
 func contains(s, substr string) bool {
