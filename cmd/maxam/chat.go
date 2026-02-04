@@ -33,12 +33,15 @@ type chatMessage struct {
 
 func runChat() {
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "Usage: maxam chat <agent>")
+		fmt.Fprintln(os.Stderr, "Usage: maxam chat <agent> [--daemon]")
 		fmt.Fprintln(os.Stderr, "Agents: (run 'maxam team list' to see configured agents)")
+		fmt.Fprintln(os.Stderr, "Flags:")
+		fmt.Fprintln(os.Stderr, "  --daemon  Run in daemon mode (wait for input continuously)")
 		os.Exit(1)
 	}
 
 	agentName := strings.ToLower(os.Args[2])
+	daemon := len(os.Args) > 3 && os.Args[3] == "--daemon"
 	workDir := getWorkDir()
 
 	// Ensure project .maxam/ directory is initialized
@@ -74,7 +77,11 @@ func runChat() {
 	defer session.logMgr.Close()
 
 	if agentName == "team" {
-		session.runTeamChat()
+		if daemon {
+			session.runTeamChatDaemon()
+		} else {
+			session.runTeamChat()
+		}
 	} else {
 		session.runAgentChat(agentName)
 	}
@@ -227,6 +234,89 @@ func (s *ChatSession) runTeamChat() {
 			s.history = append(s.history, chatMessage{role: agentName, content: result})
 		}
 	}
+}
+
+func (s *ChatSession) runTeamChatDaemon() {
+	fmt.Fprintln(os.Stderr, "MAXAM Team Chat (daemon mode)")
+	fmt.Fprintln(os.Stderr, "Waiting for input... (empty line to send, Ctrl+C to quit)")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	var messageLines []string
+
+	for {
+		if !scanner.Scan() {
+			// EOF or error - process remaining message if any
+			if len(messageLines) > 0 {
+				s.processTeamMessage(strings.Join(messageLines, "\n"))
+			}
+			break
+		}
+
+		line := scanner.Text()
+
+		// Empty line = end of message
+		if line == "" {
+			if len(messageLines) > 0 {
+				s.processTeamMessage(strings.Join(messageLines, "\n"))
+				messageLines = nil
+			}
+			continue
+		}
+
+		messageLines = append(messageLines, line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+	}
+}
+
+func (s *ChatSession) processTeamMessage(input string) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return
+	}
+
+	s.history = append(s.history, chatMessage{role: "user", content: input})
+
+	// Detect all mentioned agents
+	mentioned := s.members.DetectMentions(input)
+	if len(mentioned) == 0 {
+		mentioned = []string{"mei"}
+	}
+
+	// Call each mentioned agent in order
+	for _, agentName := range mentioned {
+		runner, ok := s.agents.Get(agentName)
+		if !ok {
+			fmt.Printf("(%s is not available)\n", agentName)
+			continue
+		}
+
+		prompt := s.buildPrompt(agentName, input)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		result, err := runner.Run(ctx, prompt)
+		cancel()
+
+		if err != nil {
+			fmt.Printf("(error: %v)\n", err)
+			continue
+		}
+
+		result = strings.TrimSpace(result)
+		fmt.Println(result)
+
+		// Check for mention leaks in agent response
+		if checkResult := mention.Check(result); checkResult.NeedsWarning {
+			fmt.Printf("⚠️  %s\n", mention.FormatWarning())
+		}
+
+		s.history = append(s.history, chatMessage{role: agentName, content: result})
+	}
+
+	// Flush stdout to ensure response is sent immediately
+	os.Stdout.Sync()
 }
 
 func (s *ChatSession) buildPrompt(agentName, currentInput string) string {
