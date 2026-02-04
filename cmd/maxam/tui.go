@@ -179,6 +179,9 @@ type tuiModel struct {
 	// Worker pool for goroutine separation
 	workerPool *worker.Pool
 
+	// Mention warning chain prevention (consecutive warning count per agent)
+	mentionWarningCount map[string]int
+
 	// Issue list on idle
 	lastIssueListTime time.Time // 最後にIssue一覧を投稿した時刻
 	ghClient          *gh.Client // GitHub client for issue list
@@ -314,6 +317,7 @@ func initialTuiModel(workDir string) tuiModel {
 		errorDetector:       errorwatch.DefaultDetector(),
 		workerPool:          workerPool,
 		ghClient:            ghClient,
+		mentionWarningCount: make(map[string]int),
 	}
 }
 
@@ -743,8 +747,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Check for mention leaks in agent response and add to history
 		m.mentionWarning = ""
-		result := mention.Check(msg.content)
-		if result.NeedsWarning {
+		mentionResult := mention.Check(msg.content)
+		var triggerRetry bool
+		if mentionResult.NeedsWarning {
 			m.mentionWarning = mention.FormatWarning()
 			// Add warning to messages and history for agent responses
 			warningMsg := mention.FormatSystemWarning(m.getFullName(msg.agent))
@@ -752,6 +757,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.history != nil {
 				m.history.Add("system", warningMsg)
 			}
+
+			// Increment consecutive warning count for this agent
+			m.mentionWarningCount[msg.agent]++
+			// Trigger retry if this is the first or second warning (allow 2 attempts)
+			if m.mentionWarningCount[msg.agent] <= 2 {
+				triggerRetry = true
+			}
+		} else {
+			// Reset warning count on successful mention
+			m.mentionWarningCount[msg.agent] = 0
 		}
 
 		// projectContextを初回送信済みとしてマーク
@@ -771,6 +786,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.updateViewport()
+
+		// Mention warning retry: give agent a chance to fix the missing mention
+		if triggerRetry {
+			m.processingAgents[msg.agent] = true
+			// Re-trigger the same agent with a hint to add mention
+			retryPrompt := "[System] メンションが漏れています。宛先を @名前 で明示して、もう一度返答してください。"
+			return m, m.runAgentAsync(retryPrompt, msg.agent, msg.chainDepth+1)
+		}
 
 		// 次のエージェントがいれば連鎖（複数並列対応）
 		if len(msg.nextAgents) > 0 {
