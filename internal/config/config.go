@@ -19,14 +19,15 @@ const (
 
 // Config represents the MAXAM configuration
 type Config struct {
-	Version             string        `yaml:"version"`
-	TeamName            string        `yaml:"team_name,omitempty"`
-	DefaultAgent        string        `yaml:"default_agent,omitempty"`
-	Agents              []AgentConfig `yaml:"agents"`
-	AnalysisMinMessages int           `yaml:"analysis_min_messages,omitempty"`
-	ContextMode         ContextMode   `yaml:"context_mode,omitempty"`
-	YOLOMode            bool          `yaml:"yolo_mode,omitempty"`
-	WorkersPerAgent     int           `yaml:"workers_per_agent,omitempty"`
+	Version               string        `yaml:"version"`
+	TeamName              string        `yaml:"team_name,omitempty"`
+	DefaultAgent          string        `yaml:"default_agent,omitempty"`
+	Agents                []AgentConfig `yaml:"agents"`
+	AnalysisMinMessages   int           `yaml:"analysis_min_messages,omitempty"`
+	ContextMode           ContextMode   `yaml:"context_mode,omitempty"`
+	YOLOMode              bool          `yaml:"yolo_mode,omitempty"`
+	WorkersPerAgent       int           `yaml:"workers_per_agent,omitempty"`
+	MentionCheckerEnabled *bool         `yaml:"mention_checker_enabled,omitempty"`
 }
 
 // AgentConfig represents an agent configuration
@@ -232,6 +233,11 @@ func mergeConfigs(base, override *Config) *Config {
 		result.WorkersPerAgent = override.WorkersPerAgent
 	}
 
+	// Override mention checker enabled if explicitly set
+	if override.MentionCheckerEnabled != nil {
+		result.MentionCheckerEnabled = override.MentionCheckerEnabled
+	}
+
 	return &result
 }
 
@@ -382,4 +388,17 @@ func (c *Config) GetTeamName() string {
 		return "Team"
 	}
 	return c.TeamName
+}
+
+// IsMentionCheckerEnabled returns whether mention checker is enabled (default: true)
+func (c *Config) IsMentionCheckerEnabled() bool {
+	if c.MentionCheckerEnabled == nil {
+		return true // default enabled
+	}
+	return *c.MentionCheckerEnabled
+}
+
+// SetMentionCheckerEnabled sets the mention checker enabled state
+func (c *Config) SetMentionCheckerEnabled(enabled bool) {
+	c.MentionCheckerEnabled = &enabled
 }
