@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/config"
 	"github.com/ytnobody/MAXAM/internal/logger"
@@ -86,14 +88,20 @@ func (s *ChatSession) runAgentChat(agentName string) {
 	}
 
 	fullName := s.members.GetFullName(agentName)
-	fmt.Printf("Chat with %s\n", fullName)
-	fmt.Println("Type 'exit' to quit, 'clear' to reset conversation")
-	fmt.Println(strings.Repeat("-", 50))
+	interactive := term.IsTerminal(int(os.Stdin.Fd()))
+
+	if interactive {
+		fmt.Printf("Chat with %s\n", fullName)
+		fmt.Println("Type 'exit' to quit, 'clear' to reset conversation")
+		fmt.Println(strings.Repeat("-", 50))
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
-		fmt.Print("\nYou: ")
+		if interactive {
+			fmt.Print("\nYou: ")
+		}
 		if !scanner.Scan() {
 			break
 		}
@@ -102,11 +110,11 @@ func (s *ChatSession) runAgentChat(agentName string) {
 		if input == "" {
 			continue
 		}
-		if input == "exit" || input == "quit" {
+		if interactive && (input == "exit" || input == "quit") {
 			fmt.Println("Bye!")
 			break
 		}
-		if input == "clear" {
+		if interactive && input == "clear" {
 			s.history = make([]chatMessage, 0)
 			fmt.Println("(conversation cleared)")
 			continue
@@ -117,7 +125,9 @@ func (s *ChatSession) runAgentChat(agentName string) {
 		// Build prompt with history
 		prompt := s.buildPrompt(agentName, input)
 
-		fmt.Printf("\n%s: ", fullName)
+		if interactive {
+			fmt.Printf("\n%s: ", fullName)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		result, err := runner.Run(ctx, prompt)
 		cancel()
@@ -145,16 +155,22 @@ func (s *ChatSession) runAgentChat(agentName string) {
 }
 
 func (s *ChatSession) runTeamChat() {
-	fmt.Println("Chat with MAXAM Team")
-	fmt.Println("Mention members with @name. Example: @yuki, @priya")
-	fmt.Println("Default: Mei will respond if no mention.")
-	fmt.Println("Type 'exit' to quit")
-	fmt.Println(strings.Repeat("-", 50))
+	interactive := term.IsTerminal(int(os.Stdin.Fd()))
+
+	if interactive {
+		fmt.Println("Chat with MAXAM Team")
+		fmt.Println("Mention members with @name. Example: @yuki, @priya")
+		fmt.Println("Default: Mei will respond if no mention.")
+		fmt.Println("Type 'exit' to quit")
+		fmt.Println(strings.Repeat("-", 50))
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
-		fmt.Print("\nYou: ")
+		if interactive {
+			fmt.Print("\nYou: ")
+		}
 		if !scanner.Scan() {
 			break
 		}
@@ -163,7 +179,7 @@ func (s *ChatSession) runTeamChat() {
 		if input == "" {
 			continue
 		}
-		if input == "exit" || input == "quit" {
+		if interactive && (input == "exit" || input == "quit") {
 			fmt.Println("Bye!")
 			break
 		}
@@ -188,7 +204,9 @@ func (s *ChatSession) runTeamChat() {
 			fullName := s.members.GetFullName(agentName)
 			prompt := s.buildPrompt(agentName, input)
 
-			fmt.Printf("\n%s: ", fullName)
+			if interactive {
+				fmt.Printf("\n%s: ", fullName)
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			result, err := runner.Run(ctx, prompt)
 			cancel()
