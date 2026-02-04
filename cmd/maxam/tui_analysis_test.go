@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -583,6 +584,68 @@ func TestMentionWarningCountReset(t *testing.T) {
 
 	if m.mentionWarningCount["yuki"] != 0 {
 		t.Errorf("expected count to be reset to 0, got %d", m.mentionWarningCount["yuki"])
+	}
+}
+
+func TestTaskPrefixParsing(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		isTask   bool
+		content  string
+	}{
+		{
+			name:    "/task で始まる入力",
+			input:   "/task @yuki Issue #150を実装して",
+			isTask:  true,
+			content: "@yuki Issue #150を実装して",
+		},
+		{
+			name:    "/task の後にスペースあり",
+			input:   "/task    複数スペース",
+			isTask:  true,
+			content: "   複数スペース",
+		},
+		{
+			name:    "通常の会話",
+			input:   "@mei 進捗どう？",
+			isTask:  false,
+			content: "",
+		},
+		{
+			name:    "/taskで始まるがスペースなし（無効）",
+			input:   "/task123",
+			isTask:  false,
+			content: "",
+		},
+		{
+			name:    "/task のみ",
+			input:   "/task ",
+			isTask:  true,
+			content: "",
+		},
+		{
+			name:    "大文字/TASK（無効、case sensitive）",
+			input:   "/TASK @yuki やって",
+			isTask:  false,
+			content: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isTask := strings.HasPrefix(tt.input, taskPrefix)
+			if isTask != tt.isTask {
+				t.Errorf("HasPrefix(%q, %q) = %v, want %v", tt.input, taskPrefix, isTask, tt.isTask)
+			}
+
+			if isTask {
+				content := strings.TrimPrefix(tt.input, taskPrefix)
+				if content != tt.content {
+					t.Errorf("TrimPrefix(%q, %q) = %q, want %q", tt.input, taskPrefix, content, tt.content)
+				}
+			}
+		})
 	}
 }
 

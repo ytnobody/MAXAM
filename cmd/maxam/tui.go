@@ -205,6 +205,7 @@ const maxChainDepth = 1000          // 最大連鎖数
 const meiInterventionInterval = 10  // Meiが介入する間隔
 const issueListInterval = 5 * time.Minute // Issue一覧投稿の最小間隔
 const issueListLimit = 20           // Issue一覧の最大表示件数
+const taskPrefix = "/task "          // 実装指示用プレフィックス
 
 func initialTuiModel(workDir string) tuiModel {
 	ti := textinput.New()
@@ -511,7 +512,26 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			m.updateViewport()
 
-			// 複数メンション対応: 検出されたエージェント全員に並列でリクエスト
+			// /task プレフィックスで分岐: SendTask or SendChat
+			if strings.HasPrefix(input, taskPrefix) {
+				// /task 〇〇 → 実装指示として SendTask を使う
+				taskContent := strings.TrimPrefix(input, taskPrefix)
+				targetAgents := m.detectAgents(taskContent)
+				var cmds []tea.Cmd
+				for _, agentName := range targetAgents {
+					if !m.processingAgents[agentName] {
+						m.processingAgents[agentName] = true
+						cmds = append(cmds, m.runTaskAsync(taskContent, agentName))
+					}
+				}
+				if len(cmds) > 0 {
+					m.updateViewport()
+					return m, tea.Batch(cmds...)
+				}
+				return m, nil
+			}
+
+			// 通常の会話として SendChat を使う
 			targetAgents := m.detectAgents(input)
 			var cmds []tea.Cmd
 			for _, agentName := range targetAgents {
@@ -910,6 +930,116 @@ func (m *tuiModel) runAgentAsync(input string, targetAgent string, depth int) te
 			chainDepth: depth,
 		}
 	}
+}
+
+// runTaskAsync は /task コマンドで呼び出される実装指示用
+// SendTask を使い、エージェントに作業中フラグを立てる
+func (m *tuiModel) runTaskAsync(taskContent string, targetAgent string) tea.Cmd {
+	return func() tea.Msg {
+		prompt := m.buildTaskPrompt(targetAgent, taskContent)
+
+		// Worker pool経由でSendTask
+		if m.workerPool != nil {
+			if w, ok := m.workerPool.Get(targetAgent); ok {
+				responseChan := make(chan worker.TaskResponse, 1)
+				w.SendTask(taskContent, prompt, responseChan)
+
+				// Wait for response
+				resp := <-responseChan
+				result := strings.TrimSpace(resp.Content)
+
+				// タスク完了後、他エージェントへのメンションを検出
+				var nextAgents []string
+				if resp.Err == nil {
+					nextAgents = m.detectAgentMentions(result, targetAgent)
+				}
+
+				return agentResponseMsg{
+					agent:      targetAgent,
+					content:    result,
+					elapsed:    resp.Elapsed,
+					err:        resp.Err,
+					nextAgents: nextAgents,
+					chainDepth: 0,
+				}
+			}
+		}
+
+		// Fallback to direct runner execution
+		runner, _ := m.agents.Get(targetAgent)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
+		start := time.Now()
+		result, err := runner.Run(ctx, prompt)
+		elapsed := time.Since(start)
+
+		result = strings.TrimSpace(result)
+
+		var nextAgents []string
+		if err == nil {
+			nextAgents = m.detectAgentMentions(result, targetAgent)
+		}
+
+		return agentResponseMsg{
+			agent:      targetAgent,
+			content:    result,
+			elapsed:    elapsed,
+			err:        err,
+			nextAgents: nextAgents,
+			chainDepth: 0,
+		}
+	}
+}
+
+// buildTaskPrompt は実装指示用のプロンプトを構築
+func (m *tuiModel) buildTaskPrompt(agentName, taskContent string) string {
+	var sb strings.Builder
+
+	sb.WriteString("これは実装タスクです。指示に従って作業を実行してください。\n\n")
+	sb.WriteString("チームメンバー:\n")
+	for i, agentCfg := range m.config.Agents {
+		marker := ""
+		if m.config.DefaultAgent == agentCfg.Name || (m.config.DefaultAgent == "" && i == 0) {
+			marker = "（デフォルト応答者）"
+		}
+		sb.WriteString(fmt.Sprintf("- %s: %s%s\n", m.members.GetFullName(agentCfg.Name), agentCfg.Role, marker))
+	}
+	sb.WriteString("\n")
+
+	sb.WriteString("重要:\n")
+	sb.WriteString("- これは実装タスクです。会話ではなく作業を行ってください\n")
+	sb.WriteString("- 作業完了後は結果を報告してください\n")
+	sb.WriteString("- 他のメンバーに依頼が必要な場合は「@名前」で呼びかけてください\n\n")
+
+	// プロジェクトコンテキスト
+	if m.projectContext != "" {
+		if !m.projectContextSent {
+			sb.WriteString(m.projectContext)
+			sb.WriteString("\n")
+		} else {
+			sb.WriteString(fmt.Sprintf("## プロジェクト情報\n\n作業ディレクトリ: %s\n\n", m.workDir))
+		}
+	}
+
+	// 直近の会話履歴（参考用）
+	if len(m.messages) > 0 {
+		sb.WriteString("## 直近の会話（参考）\n\n")
+		historyMessages := m.selectHistoryMessages()
+		for _, msg := range historyMessages {
+			if msg.role == "user" {
+				sb.WriteString(fmt.Sprintf("オーナー: %s\n\n", msg.content))
+			} else {
+				sb.WriteString(fmt.Sprintf("%s: %s\n\n", m.getFullName(msg.role), msg.content))
+			}
+		}
+	}
+
+	sb.WriteString("## 実装タスク\n\n")
+	sb.WriteString(fmt.Sprintf("オーナーからの指示: %s\n", taskContent))
+
+	return sb.String()
 }
 
 // buildMeiInterventionPrompt はMeiが会話をまとめるためのプロンプト
