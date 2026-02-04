@@ -646,6 +646,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			content: msg.content,
 		})
 
+		// Check for mention leaks in agent response
+		m.mentionWarning = ""
+		result := mention.Check(msg.content)
+		if result.NeedsWarning {
+			m.mentionWarning = mention.FormatWarning()
+		}
+
 		// projectContextを初回送信済みとしてマーク
 		m.projectContextSent = true
 
