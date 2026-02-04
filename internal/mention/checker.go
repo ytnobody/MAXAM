@@ -45,8 +45,8 @@ func NewChecker(agentNames []string) *Checker {
 			}
 		}
 	}
-	// Always include @オーナー as a valid mention
-	parts = append(parts, "オーナー")
+	// Always include @オーナー and @owner as valid mentions
+	parts = append(parts, "オーナー", "owner", "Owner")
 
 	pattern := `@(` + strings.Join(parts, "|") + `)`
 	return &Checker{
@@ -104,4 +104,9 @@ func Check(message string) Result {
 // FormatWarning returns a warning message for display
 func FormatWarning() string {
 	return "メンション先を明示してください（@名前）"
+}
+
+// FormatSystemWarning returns a system warning message for chat display
+func FormatSystemWarning(sender string) string {
+	return "[System] @" + sender + " メンションが漏れている可能性があります。宛先を確認してください"
 }
