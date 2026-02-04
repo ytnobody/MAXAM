@@ -17,6 +17,7 @@ import (
 	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/ccusage"
 	"github.com/ytnobody/MAXAM/internal/config"
+	"github.com/ytnobody/MAXAM/internal/errorwatch"
 	gh "github.com/ytnobody/MAXAM/internal/github"
 	"github.com/ytnobody/MAXAM/internal/history"
 	"github.com/ytnobody/MAXAM/internal/logger"
@@ -170,6 +171,9 @@ type tuiModel struct {
 
 	// YOLO mode - skip confirmations and auto-approve
 	yoloMode bool
+
+	// Error detection and automatic follow-up
+	errorDetector *errorwatch.Detector
 }
 
 type agentResponseMsg struct {
@@ -285,6 +289,7 @@ func initialTuiModel(workDir string) tuiModel {
 		ccusageClient:       ccClient,
 		analysisMinMessages: cfg.GetAnalysisMinMessages(),
 		yoloMode:            cfg.YOLOMode,
+		errorDetector:       errorwatch.DefaultDetector(),
 	}
 }
 
@@ -653,6 +658,29 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				role:    msg.agent,
 				content: fmt.Sprintf("(エラー: %v)", msg.err),
 			})
+
+			// Check if this is a recoverable error and send auto follow-up
+			errMsg := msg.err.Error()
+			followUpResult := m.errorDetector.CheckAndGenerateFollowUp(msg.agent, errMsg)
+			if followUpResult.ShouldSend {
+				// Get PM (default agent) to send follow-up
+				pmAgent := m.config.DefaultAgent
+				if pmAgent == "" {
+					pmAgent = "mei" // fallback
+				}
+
+				// Add system message about auto follow-up
+				m.messages = append(m.messages, tuiMessage{
+					role:    "system",
+					content: fmt.Sprintf("[自動声かけ] %s → %s", pmAgent, followUpResult.Message),
+				})
+
+				// Trigger PM to send follow-up message
+				m.processingAgents[pmAgent] = true
+				m.updateViewport()
+				return m, m.runAgentAsync(followUpResult.Message, pmAgent, 0)
+			}
+
 			m.updateViewport()
 			return m, nil
 		}
