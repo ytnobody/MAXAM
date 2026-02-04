@@ -32,6 +32,7 @@ type ChatSession struct {
 	workDir      string
 	history      []chatMessage
 	mentionCheck bool
+	daemon       bool
 }
 
 type chatMessage struct {
@@ -117,6 +118,7 @@ func runChat() {
 		workDir:      workDir,
 		history:      make([]chatMessage, 0),
 		mentionCheck: flags.mentionCheck,
+		daemon:       flags.daemon,
 	}
 	defer session.logMgr.Close()
 
@@ -378,6 +380,17 @@ func (s *ChatSession) buildPrompt(agentName, currentInput string) string {
 	sb.WriteString("- 曖昧な指示には確認を取ってください\n")
 	sb.WriteString("- 実行前に計画を説明し、OKをもらってから進めてください\n")
 	sb.WriteString("- 短く自然な会話調で返答してください\n\n")
+
+	// daemon モード時は gh コマンドの使い方を追記
+	if s.daemon {
+		sb.WriteString("## GitHub連携\n\n")
+		sb.WriteString("Issue や PR にコメントを残したい場合は `gh` コマンドを使用してください。\n\n")
+		sb.WriteString("- Issue へのコメント: `gh issue comment <番号> --body \"コメント内容\"`\n")
+		sb.WriteString("- PR へのコメント: `gh pr comment <番号> --body \"コメント内容\"`\n\n")
+		sb.WriteString("例:\n")
+		sb.WriteString("- `gh issue comment 123 --body \"実装完了しました\"`\n")
+		sb.WriteString("- `gh pr comment 45 --body \"LGTM!\"`\n\n")
+	}
 
 	if len(s.history) > 1 {
 		sb.WriteString("## これまでの会話\n\n")
