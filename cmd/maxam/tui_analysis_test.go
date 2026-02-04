@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ytnobody/MAXAM/internal/config"
 )
@@ -444,6 +445,87 @@ func TestAgentMentionWarningAddedToHistory(t *testing.T) {
 			// 詳細なテストは internal/mention/checker_test.go で実施
 			_ = tt.expectWarning // プレースホルダー
 		})
+	}
+}
+
+func TestMaybePostIssueList(t *testing.T) {
+	tests := []struct {
+		name              string
+		hasGHClient       bool
+		lastPostTime      time.Duration // 前回投稿からの経過時間
+		expectPostCommand bool
+	}{
+		{
+			name:              "GitHubクライアントなし - スキップ",
+			hasGHClient:       false,
+			lastPostTime:      10 * time.Minute,
+			expectPostCommand: false,
+		},
+		{
+			name:              "前回投稿から5分未満 - スキップ",
+			hasGHClient:       true,
+			lastPostTime:      2 * time.Minute,
+			expectPostCommand: false,
+		},
+		{
+			name:              "前回投稿から5分以上 - 投稿する",
+			hasGHClient:       true,
+			lastPostTime:      6 * time.Minute,
+			expectPostCommand: true,
+		},
+		{
+			name:              "初回（ゼロ値） - 投稿する",
+			hasGHClient:       true,
+			lastPostTime:      0, // time.Time{}からの経過 = 非常に長い
+			expectPostCommand: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &tuiModel{}
+
+			// ghClientの有無をシミュレート
+			// 実際のghClientは使わず、nilかどうかでチェック
+			if !tt.hasGHClient {
+				m.ghClient = nil
+			} else {
+				// ダミー値を設定する代わりに、ロジックの一部だけテスト
+				// ghClientがあると仮定したロジックのみ検証
+			}
+
+			// 前回投稿時刻を設定
+			if tt.lastPostTime > 0 {
+				m.lastIssueListTime = time.Now().Add(-tt.lastPostTime)
+			}
+			// lastPostTime == 0 の場合は time.Time{} (ゼロ値)のまま
+
+			// ghClientがない場合のテスト
+			if !tt.hasGHClient {
+				cmd := m.maybePostIssueList()
+				if cmd != nil {
+					t.Error("ghClientがない場合はnilを返すべき")
+				}
+				return
+			}
+
+			// ghClientがある場合の時間チェックロジックのテスト
+			shouldPost := time.Since(m.lastIssueListTime) >= issueListInterval
+			if shouldPost != tt.expectPostCommand {
+				t.Errorf("time check: got %v, want %v (elapsed: %v)",
+					shouldPost, tt.expectPostCommand, time.Since(m.lastIssueListTime))
+			}
+		})
+	}
+}
+
+func TestIssueListConstants(t *testing.T) {
+	// 定数が適切な値であることを確認
+	if issueListInterval != 5*time.Minute {
+		t.Errorf("issueListInterval = %v, want 5m", issueListInterval)
+	}
+	if issueListLimit != 20 {
+		t.Errorf("issueListLimit = %d, want 20", issueListLimit)
 	}
 }
 

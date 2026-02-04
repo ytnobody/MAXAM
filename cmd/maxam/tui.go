@@ -178,6 +178,10 @@ type tuiModel struct {
 
 	// Worker pool for goroutine separation
 	workerPool *worker.Pool
+
+	// Issue list on idle
+	lastIssueListTime time.Time // 最後にIssue一覧を投稿した時刻
+	ghClient          *gh.Client // GitHub client for issue list
 }
 
 type agentResponseMsg struct {
@@ -196,6 +200,8 @@ type analysisTickMsg struct {
 
 const maxChainDepth = 1000          // 最大連鎖数
 const meiInterventionInterval = 10  // Meiが介入する間隔
+const issueListInterval = 5 * time.Minute // Issue一覧投稿の最小間隔
+const issueListLimit = 20           // Issue一覧の最大表示件数
 
 func initialTuiModel(workDir string) tuiModel {
 	ti := textinput.New()
@@ -243,7 +249,9 @@ func initialTuiModel(workDir string) tuiModel {
 
 	// Setup PR watcher for worktree cleanup (silently fail if no GitHub access)
 	var prWatcher *gh.Watcher
-	if ghClient, err := gh.NewClient("ytnobody", "MAXAM"); err == nil {
+	var ghClient *gh.Client
+	if client, err := gh.NewClient("ytnobody", "MAXAM"); err == nil {
+		ghClient = client
 		prWatcher = gh.NewWatcher(ghClient)
 	}
 
@@ -305,6 +313,7 @@ func initialTuiModel(workDir string) tuiModel {
 		yoloMode:            cfg.YOLOMode,
 		errorDetector:       errorwatch.DefaultDetector(),
 		workerPool:          workerPool,
+		ghClient:            ghClient,
 	}
 }
 
@@ -326,6 +335,12 @@ type ccusageUpdateMsg struct {
 
 // ccusageTickMsg triggers periodic ccusage updates
 type ccusageTickMsg struct{}
+
+// issueListMsg is sent when issue list is fetched
+type issueListMsg struct {
+	issues []string
+	err    error
+}
 
 func (m tuiModel) Init() tea.Cmd {
 	// Start worker pool
@@ -665,6 +680,26 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.todayCost = msg.cost
 		return m, nil
 
+	case issueListMsg:
+		if msg.err == nil && len(msg.issues) > 0 {
+			// Issue一覧をシステムメッセージとして投稿
+			var sb strings.Builder
+			sb.WriteString("📋 オープンなIssue一覧:\n")
+			for _, issue := range msg.issues {
+				sb.WriteString(fmt.Sprintf("  %s\n", issue))
+			}
+			if len(msg.issues) >= issueListLimit {
+				sb.WriteString(fmt.Sprintf("  ...（%d件まで表示）\n", issueListLimit))
+			}
+			content := sb.String()
+			m.messages = append(m.messages, tuiMessage{role: "system", content: content})
+			if m.history != nil {
+				m.history.Add("system", content)
+			}
+			m.updateViewport()
+		}
+		return m, nil
+
 	case agentResponseMsg:
 		// エージェントの処理状態をクリア
 		delete(m.processingAgents, msg.agent)
@@ -748,6 +783,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if len(cmds) > 0 {
 				return m, tea.Batch(cmds...)
+			}
+		}
+
+		// 全エージェントがアイドルになったらIssue一覧を投稿
+		if len(m.processingAgents) == 0 {
+			if cmd := m.maybePostIssueList(); cmd != nil {
+				return m, cmd
 			}
 		}
 
@@ -1422,6 +1464,49 @@ func (m *tuiModel) buildLightweightAnalysisPrompt(messages []tuiMessage) string 
 	}
 
 	return sb.String()
+}
+
+// maybePostIssueList checks if we should post issue list and returns a command if so
+func (m *tuiModel) maybePostIssueList() tea.Cmd {
+	// GitHub clientがなければスキップ
+	if m.ghClient == nil {
+		return nil
+	}
+
+	// 重複防止: 前回投稿から一定時間経過していなければスキップ
+	if time.Since(m.lastIssueListTime) < issueListInterval {
+		return nil
+	}
+
+	// 時刻を更新（先に更新して重複を防ぐ）
+	m.lastIssueListTime = time.Now()
+
+	return m.fetchIssueList()
+}
+
+// fetchIssueList fetches open issues from GitHub
+func (m *tuiModel) fetchIssueList() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		issues, err := m.ghClient.ListIssues(ctx, nil)
+		if err != nil {
+			return issueListMsg{err: err}
+		}
+
+		// Issue文字列に変換（上限まで）
+		var result []string
+		for i, issue := range issues {
+			if i >= issueListLimit {
+				break
+			}
+			// #番号 タイトル の形式
+			result = append(result, fmt.Sprintf("#%d %s", issue.GetNumber(), issue.GetTitle()))
+		}
+
+		return issueListMsg{issues: result}
+	}
 }
 
 // isNoIssueResponse は「特になし」相当の返答かどうか判定
