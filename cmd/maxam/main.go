@@ -9,10 +9,18 @@ import (
 
 	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/logger"
+	"github.com/ytnobody/MAXAM/internal/summary"
 	"github.com/ytnobody/MAXAM/internal/workflow"
 )
 
 func main() {
+	// Ensure CLAUDE.summary.md is up to date before any command
+	workDir, _ := os.Getwd()
+	if err := summary.EnsureUpToDate(workDir); err != nil {
+		// Non-fatal: just log and continue
+		fmt.Fprintf(os.Stderr, "Warning: failed to update summary: %v\n", err)
+	}
+
 	if len(os.Args) < 2 {
 		// No arguments: launch team chat TUI
 		runTeamChat()
