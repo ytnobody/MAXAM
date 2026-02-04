@@ -178,3 +178,74 @@ func GetAgentDirWithProject(projectDir, name string) (string, error) {
 	// 2. Fall back to global
 	return GetAgentDir(name)
 }
+
+// DefaultProjectConfigTemplate is the default config.yaml template for projects
+const DefaultProjectConfigTemplate = `# MAXAM Project Configuration
+# See: https://github.com/ytnobody/MAXAM
+
+version: "1"
+
+# Team members (run 'maxam team init' to set up)
+# agents:
+#   - name: mei
+#     full_name: Mei Chen
+#     role: PM + Architect
+`
+
+// DefaultProjectClaudeMDTemplate is the default CLAUDE.md template for projects
+const DefaultProjectClaudeMDTemplate = `# Project Settings
+
+> This file manages project-specific settings and learning. Tracked by git.
+
+## Team Members
+
+| Name | Role |
+|------|------|
+| (Run 'maxam team init' to set up) | |
+
+## Learning
+
+(Team learnings will be recorded here)
+
+---
+
+*This file is continuously updated through team learning*
+`
+
+// EnsureProjectInitialized sets up project/.maxam/ if not present
+// Creates default config.yaml and CLAUDE.md templates
+// Does not overwrite existing files
+func EnsureProjectInitialized(projectDir string) error {
+	configDir := ProjectConfigDir(projectDir)
+
+	// Create .maxam directory if not exists
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("create project config dir: %w", err)
+	}
+
+	// Create config.yaml if not exists
+	configPath := filepath.Join(configDir, "config.yaml")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if err := os.WriteFile(configPath, []byte(DefaultProjectConfigTemplate), 0644); err != nil {
+			return fmt.Errorf("write project config: %w", err)
+		}
+	}
+
+	// Create CLAUDE.md if not exists
+	claudeMDPath := filepath.Join(configDir, "CLAUDE.md")
+	if _, err := os.Stat(claudeMDPath); os.IsNotExist(err) {
+		if err := os.WriteFile(claudeMDPath, []byte(DefaultProjectClaudeMDTemplate), 0644); err != nil {
+			return fmt.Errorf("write project CLAUDE.md: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// IsProjectInitialized returns true if project/.maxam/ exists with config files
+func IsProjectInitialized(projectDir string) bool {
+	configDir := ProjectConfigDir(projectDir)
+	configPath := filepath.Join(configDir, "config.yaml")
+	_, err := os.Stat(configPath)
+	return err == nil
+}
