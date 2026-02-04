@@ -244,7 +244,7 @@ func (r *Runner) RunWithAllowedTools(ctx context.Context, prompt string, tools [
 // Agents provides pre-configured runners for each team member
 type Agents struct {
 	workDir string
-	runners map[string]*Runner
+	runners map[string]*Runner // key: instance key (e.g., "yuki" or "yuki-1")
 }
 
 // NewAgents creates the agent team with project-local priority
@@ -268,12 +268,14 @@ func NewAgents(workDir string) *Agents {
 	// Create runners for configured agents
 	for _, agentCfg := range cfg.Agents {
 		name := agentCfg.Name
+		instanceKey := agentCfg.GetInstanceKey()
 		fullName := agentCfg.FullName
 		if fullName == "" {
 			fullName = name // Use agent name if FullName not set
 		}
 
 		// Get agent directory with project priority
+		// Use base name for agent directory (shared across instances)
 		agentDir, err := config.GetAgentDirWithProject(workDir, name)
 		if err != nil {
 			continue // Skip if agent not found
@@ -287,7 +289,7 @@ func NewAgents(workDir string) *Agents {
 			if agentCfg.Model != "" {
 				runner.Model = Model(agentCfg.Model)
 			}
-			runners[name] = runner
+			runners[instanceKey] = runner
 		}
 	}
 

@@ -947,3 +947,204 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
+
+func TestAgentConfigGetInstanceKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   AgentConfig
+		expected string
+	}{
+		{
+			name:     "インスタンスIDなし",
+			config:   AgentConfig{Name: "yuki"},
+			expected: "yuki",
+		},
+		{
+			name:     "インスタンスIDあり",
+			config:   AgentConfig{Name: "yuki", InstanceID: "1"},
+			expected: "yuki-1",
+		},
+		{
+			name:     "インスタンスID=2",
+			config:   AgentConfig{Name: "yuki", InstanceID: "2"},
+			expected: "yuki-2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.config.GetInstanceKey()
+			if got != tt.expected {
+				t.Errorf("GetInstanceKey() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetAgentByInstanceKey(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "yuki", FullName: "Yuki Tanaka"},
+			{Name: "yuki", FullName: "Yuki Tanaka", InstanceID: "1"},
+			{Name: "yuki", FullName: "Yuki Tanaka", InstanceID: "2"},
+			{Name: "mei", FullName: "Mei Chen"},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		key        string
+		shouldFind bool
+		wantName   string
+		wantID     string
+	}{
+		{
+			name:       "インスタンスIDなしで検索",
+			key:        "yuki",
+			shouldFind: true,
+			wantName:   "yuki",
+			wantID:     "",
+		},
+		{
+			name:       "インスタンスID=1で検索",
+			key:        "yuki-1",
+			shouldFind: true,
+			wantName:   "yuki",
+			wantID:     "1",
+		},
+		{
+			name:       "インスタンスID=2で検索",
+			key:        "yuki-2",
+			shouldFind: true,
+			wantName:   "yuki",
+			wantID:     "2",
+		},
+		{
+			name:       "存在しないキー",
+			key:        "yuki-3",
+			shouldFind: false,
+		},
+		{
+			name:       "別のエージェント",
+			key:        "mei",
+			shouldFind: true,
+			wantName:   "mei",
+			wantID:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cfg.GetAgentByInstanceKey(tt.key)
+			if tt.shouldFind {
+				if got == nil {
+					t.Errorf("GetAgentByInstanceKey(%q) returned nil", tt.key)
+					return
+				}
+				if got.Name != tt.wantName {
+					t.Errorf("Name = %q, want %q", got.Name, tt.wantName)
+				}
+				if got.InstanceID != tt.wantID {
+					t.Errorf("InstanceID = %q, want %q", got.InstanceID, tt.wantID)
+				}
+			} else {
+				if got != nil {
+					t.Errorf("GetAgentByInstanceKey(%q) = %v, want nil", tt.key, got)
+				}
+			}
+		})
+	}
+}
+
+func TestGetAgentInstances(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "yuki", FullName: "Yuki Tanaka"},
+			{Name: "yuki", FullName: "Yuki Tanaka", InstanceID: "1"},
+			{Name: "yuki", FullName: "Yuki Tanaka", InstanceID: "2"},
+			{Name: "mei", FullName: "Mei Chen"},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		agentName     string
+		expectedCount int
+	}{
+		{
+			name:          "yukiは3インスタンス",
+			agentName:     "yuki",
+			expectedCount: 3,
+		},
+		{
+			name:          "meiは1インスタンス",
+			agentName:     "mei",
+			expectedCount: 1,
+		},
+		{
+			name:          "存在しないエージェントは0",
+			agentName:     "unknown",
+			expectedCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cfg.GetAgentInstances(tt.agentName)
+			if len(got) != tt.expectedCount {
+				t.Errorf("GetAgentInstances(%q) returned %d, want %d", tt.agentName, len(got), tt.expectedCount)
+			}
+		})
+	}
+}
+
+func TestGetAllInstanceKeys(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "yuki"},
+			{Name: "yuki", InstanceID: "1"},
+			{Name: "mei"},
+		},
+	}
+
+	keys := cfg.GetAllInstanceKeys()
+	if len(keys) != 3 {
+		t.Errorf("GetAllInstanceKeys() returned %d keys, want 3", len(keys))
+	}
+
+	expected := map[string]bool{"yuki": true, "yuki-1": true, "mei": true}
+	for _, key := range keys {
+		if !expected[key] {
+			t.Errorf("Unexpected key: %q", key)
+		}
+	}
+}
+
+func TestGetUniqueAgentNames(t *testing.T) {
+	cfg := &Config{
+		Agents: []AgentConfig{
+			{Name: "yuki"},
+			{Name: "yuki", InstanceID: "1"},
+			{Name: "yuki", InstanceID: "2"},
+			{Name: "mei"},
+		},
+	}
+
+	names := cfg.GetUniqueAgentNames()
+	if len(names) != 2 {
+		t.Errorf("GetUniqueAgentNames() returned %d names, want 2", len(names))
+	}
+
+	expected := map[string]bool{"yuki": true, "mei": true}
+	for _, name := range names {
+		if !expected[name] {
+			t.Errorf("Unexpected name: %q", name)
+		}
+	}
+}
+
+func TestDefaultMaxInstances(t *testing.T) {
+	if DefaultMaxInstances != 3 {
+		t.Errorf("DefaultMaxInstances = %d, want 3", DefaultMaxInstances)
+	}
+}
