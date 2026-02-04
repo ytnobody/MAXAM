@@ -103,6 +103,11 @@ var (
 			Background(lipgloss.Color("#FFFF00")).
 			Bold(true).
 			Padding(0, 1)
+
+	// System message style for mention warnings
+	systemStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFD700")).
+			Bold(true)
 )
 
 type tuiMessage struct {
@@ -453,6 +458,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.history != nil {
 				m.history.Add("user", input)
 			}
+
+			// Check for mention leak and add system warning if needed
+			result := mention.Check(input)
+			if result.NeedsWarning {
+				warningMsg := mention.FormatSystemWarning("オーナー")
+				m.messages = append(m.messages, tuiMessage{role: "system", content: warningMsg})
+				if m.history != nil {
+					m.history.Add("system", warningMsg)
+				}
+			}
+
 			m.updateViewport()
 
 			// 複数メンション対応: 検出されたエージェント全員に並列でリクエスト
@@ -821,6 +837,8 @@ func (m *tuiModel) updateViewport() {
 		if msg.role == "user" {
 			sb.WriteString(userStyle.Render("You: "))
 			sb.WriteString(msg.content)
+		} else if msg.role == "system" {
+			sb.WriteString(systemStyle.Render(msg.content))
 		} else {
 			style := m.getAgentStyle(msg.role)
 			sb.WriteString(style.Render(m.getFullName(msg.role) + ": "))

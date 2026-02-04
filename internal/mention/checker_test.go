@@ -217,3 +217,68 @@ func TestSetDefaultChecker(t *testing.T) {
 		t.Error("Custom checker should not match @yuki")
 	}
 }
+
+func TestOwnerMention(t *testing.T) {
+	// Test that @owner (English) is recognized as valid mention
+	tests := []struct {
+		name        string
+		agentNames  []string
+		message     string
+		wantMention bool
+	}{
+		{
+			name:        "@owner lowercase",
+			agentNames:  []string{"alice"},
+			message:     "@owner 確認お願い",
+			wantMention: true,
+		},
+		{
+			name:        "@Owner title case",
+			agentNames:  []string{"alice"},
+			message:     "@Owner 確認お願い",
+			wantMention: true,
+		},
+		{
+			name:        "@オーナー Japanese",
+			agentNames:  []string{"alice"},
+			message:     "@オーナー 確認お願い",
+			wantMention: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checker := NewChecker(tt.agentNames)
+			result := checker.Check(tt.message)
+			if result.HasMention != tt.wantMention {
+				t.Errorf("Check(%q).HasMention = %v, want %v",
+					tt.message, result.HasMention, tt.wantMention)
+			}
+		})
+	}
+}
+
+func TestFormatSystemWarning(t *testing.T) {
+	tests := []struct {
+		sender   string
+		expected string
+	}{
+		{
+			sender:   "オーナー",
+			expected: "[System] @オーナー メンションが漏れている可能性があります。宛先を確認してください",
+		},
+		{
+			sender:   "Yuki",
+			expected: "[System] @Yuki メンションが漏れている可能性があります。宛先を確認してください",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.sender, func(t *testing.T) {
+			result := FormatSystemWarning(tt.sender)
+			if result != tt.expected {
+				t.Errorf("FormatSystemWarning(%q) = %q, want %q", tt.sender, result, tt.expected)
+			}
+		})
+	}
+}
