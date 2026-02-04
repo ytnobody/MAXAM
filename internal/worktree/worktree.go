@@ -6,16 +6,47 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/ytnobody/MAXAM/internal/config"
 )
 
 const basePath = "/tmp/maxam"
 
-var agentNames = []string{"mei", "yuki", "rin", "shiori", "priya", "amara"}
+// getAgentNames returns agent names from config, or detects from filesystem
+func getAgentNames(workDir string) []string {
+	// Try to get from config first
+	if workDir != "" {
+		cfg, err := config.LoadWithProject(workDir)
+		if err == nil && cfg.HasAgents() {
+			return cfg.GetUniqueAgentNames()
+		}
+	}
+
+	// Fallback: detect from filesystem
+	return detectAgentsFromFilesystem()
+}
+
+// detectAgentsFromFilesystem scans /tmp/maxam for existing agent directories
+func detectAgentsFromFilesystem() []string {
+	var agents []string
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return agents
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			agents = append(agents, entry.Name())
+		}
+	}
+	return agents
+}
 
 // CleanupForBranch removes all worktrees associated with the given branch
 // Silently ignores errors (best-effort cleanup)
 func CleanupForBranch(repoPath, branchName string) {
-	for _, agent := range agentNames {
+	agents := getAgentNames(repoPath)
+	for _, agent := range agents {
 		worktrees := findWorktreesForAgent(agent, branchName)
 		for _, wt := range worktrees {
 			removeWorktree(repoPath, wt)
@@ -91,9 +122,15 @@ func removeWorktree(repoPath, wtPath string) {
 
 // ListAll returns all worktrees under /tmp/maxam
 func ListAll() map[string][]string {
+	return ListAllForProject("")
+}
+
+// ListAllForProject returns all worktrees under /tmp/maxam for a specific project
+func ListAllForProject(workDir string) map[string][]string {
 	result := make(map[string][]string)
 
-	for _, agent := range agentNames {
+	agents := getAgentNames(workDir)
+	for _, agent := range agents {
 		agentDir := filepath.Join(basePath, agent)
 		entries, err := os.ReadDir(agentDir)
 		if err != nil {

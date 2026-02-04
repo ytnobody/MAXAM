@@ -31,11 +31,25 @@ type Config struct {
 
 // AgentConfig represents an agent configuration
 type AgentConfig struct {
-	Name     string `yaml:"name"`
-	FullName string `yaml:"full_name"`
-	Role     string `yaml:"role"`
-	Model    string `yaml:"model,omitempty"` // opus, sonnet, haiku
-	Color    string `yaml:"color,omitempty"` // hex color code (e.g., "#FF9933")
+	Name       string `yaml:"name"`
+	FullName   string `yaml:"full_name"`
+	Role       string `yaml:"role"`
+	Model      string `yaml:"model,omitempty"`       // opus, sonnet, haiku
+	Color      string `yaml:"color,omitempty"`       // hex color code (e.g., "#FF9933")
+	InstanceID string `yaml:"instance_id,omitempty"` // for multi-instance support (e.g., "1", "2")
+}
+
+// TODO: Move to config.yaml when multi-instance feature is stabilized
+// DefaultMaxInstances is the default maximum number of instances per agent
+const DefaultMaxInstances = 3
+
+// GetInstanceKey returns the unique key for this agent instance
+// Format: "name" (no instance) or "name-instanceID" (with instance)
+func (a *AgentConfig) GetInstanceKey() string {
+	if a.InstanceID == "" {
+		return a.Name
+	}
+	return a.Name + "-" + a.InstanceID
 }
 
 // DefaultAnalysisMinMessages is the default minimum message count for analysis
@@ -294,6 +308,50 @@ func (c *Config) GetAgentColor(name string) string {
 		}
 	}
 	return ""
+}
+
+// GetAgentByInstanceKey returns the agent with the specified instance key
+// Supports both "name" and "name-instanceID" formats
+func (c *Config) GetAgentByInstanceKey(key string) *AgentConfig {
+	for i := range c.Agents {
+		if c.Agents[i].GetInstanceKey() == key {
+			return &c.Agents[i]
+		}
+	}
+	return nil
+}
+
+// GetAgentInstances returns all instances of the specified agent name
+func (c *Config) GetAgentInstances(name string) []AgentConfig {
+	var result []AgentConfig
+	for _, agent := range c.Agents {
+		if agent.Name == name {
+			result = append(result, agent)
+		}
+	}
+	return result
+}
+
+// GetAllInstanceKeys returns all unique instance keys for agents
+func (c *Config) GetAllInstanceKeys() []string {
+	var keys []string
+	for _, agent := range c.Agents {
+		keys = append(keys, agent.GetInstanceKey())
+	}
+	return keys
+}
+
+// GetUniqueAgentNames returns unique agent names (without instance IDs)
+func (c *Config) GetUniqueAgentNames() []string {
+	seen := make(map[string]bool)
+	var names []string
+	for _, agent := range c.Agents {
+		if !seen[agent.Name] {
+			seen[agent.Name] = true
+			names = append(names, agent.Name)
+		}
+	}
+	return names
 }
 
 // GetAgentByRole returns the first agent with the specified role
