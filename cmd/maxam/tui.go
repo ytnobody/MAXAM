@@ -24,6 +24,7 @@ import (
 	"github.com/ytnobody/MAXAM/internal/logger"
 	"github.com/ytnobody/MAXAM/internal/member"
 	"github.com/ytnobody/MAXAM/internal/mention"
+	"github.com/ytnobody/MAXAM/internal/mode"
 	"github.com/ytnobody/MAXAM/internal/router"
 	"github.com/ytnobody/MAXAM/internal/taskboard"
 	"github.com/ytnobody/MAXAM/internal/tui/tasklist"
@@ -175,6 +176,9 @@ type tuiModel struct {
 	// Issue list on idle
 	lastIssueListTime time.Time  // 最後にIssue一覧を投稿した時刻
 	ghClient          *gh.Client // GitHub client for issue list
+
+	// Mode manager for operating mode control
+	modeManager *mode.Manager
 }
 
 type agentResponseMsg struct {
@@ -308,6 +312,7 @@ func initialTuiModel(workDir string) tuiModel {
 		workerPool:          workerPool,
 		ghClient:            ghClient,
 		mentionWarningCount: make(map[string]int),
+		modeManager:         mode.NewManager(config.ModeInteractive),
 	}
 }
 
@@ -738,27 +743,30 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 
 		// Check for mention leaks in agent response and add to history
+		// Only enforce in Plan/Auto modes, not in Interactive mode
 		m.mentionWarning = ""
 		var triggerRetry bool
-		mentionResult := mention.Check(msg.content)
-		if mentionResult.NeedsWarning {
-			m.mentionWarning = mention.FormatWarning()
-			// Add warning to messages and history for agent responses
-			warningMsg := mention.FormatSystemWarning(m.getFullName(msg.agent))
-			m.messages = append(m.messages, tuiMessage{role: "system", content: warningMsg})
-			if m.history != nil {
-				m.history.Add("system", warningMsg)
-			}
+		if m.modeManager.ShouldEnforceMention() {
+			mentionResult := mention.Check(msg.content)
+			if mentionResult.NeedsWarning {
+				m.mentionWarning = mention.FormatWarning()
+				// Add warning to messages and history for agent responses
+				warningMsg := mention.FormatSystemWarning(m.getFullName(msg.agent))
+				m.messages = append(m.messages, tuiMessage{role: "system", content: warningMsg})
+				if m.history != nil {
+					m.history.Add("system", warningMsg)
+				}
 
-			// Increment consecutive warning count for this agent
-			m.mentionWarningCount[msg.agent]++
-			// Trigger retry if this is the first or second warning (allow 2 attempts)
-			if m.mentionWarningCount[msg.agent] <= 2 {
-				triggerRetry = true
+				// Increment consecutive warning count for this agent
+				m.mentionWarningCount[msg.agent]++
+				// Trigger retry if this is the first or second warning (allow 2 attempts)
+				if m.mentionWarningCount[msg.agent] <= 2 {
+					triggerRetry = true
+				}
+			} else {
+				// Reset warning count on successful mention
+				m.mentionWarningCount[msg.agent] = 0
 			}
-		} else {
-			// Reset warning count on successful mention
-			m.mentionWarningCount[msg.agent] = 0
 		}
 
 		// projectContextを初回送信済みとしてマーク
@@ -817,7 +825,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, tiCmd)
 
 	// Check for mention leaks in real-time as user types
-	if m.currentView == viewChat {
+	// Only enforce in Plan/Auto modes, not in Interactive mode
+	if m.currentView == viewChat && m.modeManager.ShouldEnforceMention() {
 		input := m.textInput.Value()
 		result := mention.Check(input)
 		if result.NeedsWarning {
