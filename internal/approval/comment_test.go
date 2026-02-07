@@ -39,7 +39,7 @@ func TestCommentChecker_IsApprovalComment(t *testing.T) {
 		{"empty string", "", false},
 		{"random text", "This is a random comment", false},
 		{"question about ok", "Is this ok to merge?", true}, // "ok" matches as word boundary
-		{"looks good", "Looks good!", false},              // "ok" in "Looks" doesn't match (not word boundary)
+		{"looks good", "Looks good!", false},                // "ok" in "Looks" doesn't match (not word boundary)
 		{"nice work", "Nice work!", false},
 
 		// Edge cases

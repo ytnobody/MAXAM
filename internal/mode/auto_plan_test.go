@@ -13,10 +13,10 @@ import (
 
 // mockClient implements both IssueCommentFetcher and IssueCommenter
 type mockClient struct {
-	mu            sync.Mutex
-	comments      map[int][]*github.IssueComment
-	postedBodies  []string
-	postedIssues  []int
+	mu           sync.Mutex
+	comments     map[int][]*github.IssueComment
+	postedBodies []string
+	postedIssues []int
 }
 
 func newMockClient() *mockClient {

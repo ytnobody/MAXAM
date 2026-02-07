@@ -18,9 +18,9 @@ type Manager struct {
 
 // PlanContext stores the context from plan mode
 type PlanContext struct {
-	DiscussionURL string   // URL of approved discussion
-	IssueNumbers  []int    // Issue numbers created from the plan
-	Approved      bool     // Whether the plan was approved
+	DiscussionURL string // URL of approved discussion
+	IssueNumbers  []int  // Issue numbers created from the plan
+	Approved      bool   // Whether the plan was approved
 }
 
 // NewManager creates a new mode manager with the given default mode

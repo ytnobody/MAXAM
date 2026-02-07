@@ -93,11 +93,11 @@ func (c *CommentChecker) IsApprovalComment(body string) bool {
 
 // ApprovalResult represents the result of approval detection
 type ApprovalResult struct {
-	Approved    bool
-	Comment     *github.IssueComment
-	ApprovedAt  time.Time
-	ApprovedBy  string
-	Keyword     string
+	Approved   bool
+	Comment    *github.IssueComment
+	ApprovedAt time.Time
+	ApprovedBy string
+	Keyword    string
 }
 
 // FindApprovalInComments searches through comments for an approval
@@ -111,9 +111,9 @@ func (c *CommentChecker) FindApprovalInComments(comments []*github.IssueComment)
 		for i, pattern := range c.patterns {
 			if pattern.MatchString(body) {
 				result := &ApprovalResult{
-					Approved:   true,
-					Comment:    comment,
-					Keyword:    c.keywords[i],
+					Approved: true,
+					Comment:  comment,
+					Keyword:  c.keywords[i],
 				}
 
 				if comment.CreatedAt != nil {
@@ -148,9 +148,9 @@ func (c *CommentChecker) FindApprovalSince(comments []*github.IssueComment, sinc
 		for i, pattern := range c.patterns {
 			if pattern.MatchString(body) {
 				result := &ApprovalResult{
-					Approved:   true,
-					Comment:    comment,
-					Keyword:    c.keywords[i],
+					Approved: true,
+					Comment:  comment,
+					Keyword:  c.keywords[i],
 				}
 
 				if comment.CreatedAt != nil {
