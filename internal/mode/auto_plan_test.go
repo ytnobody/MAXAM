@@ -3,11 +3,13 @@ package mode
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/go-github/v60/github"
 	"github.com/ytnobody/MAXAM/internal/approval"
+	"github.com/ytnobody/MAXAM/internal/auto"
 	"github.com/ytnobody/MAXAM/internal/config"
 )
 
@@ -274,5 +276,90 @@ func TestAutoPlanHandler_DoubleStart(t *testing.T) {
 	err = handler.StartPlanWorkflow(context.Background(), 456, "Plan 2", "Agent2")
 	if err == nil {
 		t.Error("Expected error on second StartPlanWorkflow()")
+	}
+}
+
+// mockExecutor is a mock TaskExecutor for testing
+type mockExecutor struct {
+	executed            atomic.Bool
+	executedIssueNumber int
+	mu                  sync.Mutex
+}
+
+func (m *mockExecutor) Execute(ctx context.Context, issueNumber int, title string) (prNumber int, err error) {
+	m.executed.Store(true)
+	m.mu.Lock()
+	m.executedIssueNumber = issueNumber
+	m.mu.Unlock()
+	return 0, nil
+}
+
+func TestAutoPlanHandler_RunnerIntegration(t *testing.T) {
+	client := newMockClient()
+	modeManager := NewManager(config.ModeInteractive)
+	watcher := approval.NewWatcher(client)
+	poster := approval.NewQuestionPoster(client)
+
+	// Create runner with custom executor
+	executor := &mockExecutor{}
+	runner := auto.NewRunner(executor, auto.DefaultConfig())
+
+	handler := NewAutoPlanHandlerWithRunner(modeManager, watcher, poster, runner)
+
+	// Start workflow
+	err := handler.StartPlanWorkflow(context.Background(), 42, "Test plan", "TestAgent")
+	if err != nil {
+		t.Fatalf("StartPlanWorkflow() error = %v", err)
+	}
+
+	// Add approval comment
+	client.SetComments(42, []*github.IssueComment{
+		{
+			Body:      ptrStr("/approve"),
+			CreatedAt: &github.Timestamp{Time: time.Now().Add(1 * time.Second)},
+			User:      &github.User{Login: ptrStr("owner")},
+		},
+	})
+
+	// Check approval (triggers runner)
+	approved, _, err := handler.CheckApproval(context.Background())
+	if err != nil {
+		t.Fatalf("CheckApproval() error = %v", err)
+	}
+	if !approved {
+		t.Error("Expected approved")
+	}
+
+	// Wait for runner to execute (async)
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify runner was called
+	if !executor.executed.Load() {
+		t.Error("Expected runner to be executed")
+	}
+	executor.mu.Lock()
+	executedIssueNumber := executor.executedIssueNumber
+	executor.mu.Unlock()
+	if executedIssueNumber != 42 {
+		t.Errorf("Executed issue number = %d, want 42", executedIssueNumber)
+	}
+}
+
+func TestAutoPlanHandler_RunnerAccessor(t *testing.T) {
+	client := newMockClient()
+	modeManager := NewManager(config.ModeInteractive)
+	watcher := approval.NewWatcher(client)
+	poster := approval.NewQuestionPoster(client)
+
+	handler := NewAutoPlanHandler(modeManager, watcher, poster)
+
+	// Runner should not be nil
+	if handler.Runner() == nil {
+		t.Error("Expected runner to be non-nil")
+	}
+
+	// Runner should be in idle state
+	if handler.Runner().State() != auto.RunnerStateIdle {
+		t.Errorf("Runner state = %v, want %v", handler.Runner().State(), auto.RunnerStateIdle)
 	}
 }

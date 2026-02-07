@@ -3,10 +3,12 @@ package mode
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/ytnobody/MAXAM/internal/approval"
+	"github.com/ytnobody/MAXAM/internal/auto"
 	"github.com/ytnobody/MAXAM/internal/config"
 )
 
@@ -18,6 +20,7 @@ type AutoPlanHandler struct {
 	modeManager *Manager
 	watcher     *approval.Watcher
 	poster      *approval.QuestionPoster
+	runner      *auto.Runner
 
 	// current state
 	planIssueNumber int
@@ -57,6 +60,14 @@ func DefaultAutoPlanConfig() AutoPlanConfig {
 	}
 }
 
+// noopExecutor is a no-op TaskExecutor for default handler
+type noopExecutor struct{}
+
+func (n *noopExecutor) Execute(ctx context.Context, issueNumber int, title string) (prNumber int, err error) {
+	// No-op: actual execution is handled by the caller
+	return 0, nil
+}
+
 // NewAutoPlanHandler creates a new AutoPlanHandler
 func NewAutoPlanHandler(
 	modeManager *Manager,
@@ -67,6 +78,23 @@ func NewAutoPlanHandler(
 		modeManager: modeManager,
 		watcher:     watcher,
 		poster:      poster,
+		runner:      auto.NewRunner(&noopExecutor{}, auto.DefaultConfig()),
+		state:       StateIdle,
+	}
+}
+
+// NewAutoPlanHandlerWithRunner creates a new AutoPlanHandler with a custom runner
+func NewAutoPlanHandlerWithRunner(
+	modeManager *Manager,
+	watcher *approval.Watcher,
+	poster *approval.QuestionPoster,
+	runner *auto.Runner,
+) *AutoPlanHandler {
+	return &AutoPlanHandler{
+		modeManager: modeManager,
+		watcher:     watcher,
+		poster:      poster,
+		runner:      runner,
 		state:       StateIdle,
 	}
 }
@@ -97,6 +125,11 @@ func (h *AutoPlanHandler) PlanIssueNumber() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.planIssueNumber
+}
+
+// Runner returns the auto runner
+func (h *AutoPlanHandler) Runner() *auto.Runner {
+	return h.runner
 }
 
 // StartPlanWorkflow starts the automatic plan workflow
@@ -164,7 +197,6 @@ func (h *AutoPlanHandler) CheckApproval(ctx context.Context) (bool, string, erro
 // handleApproval handles the approval event
 func (h *AutoPlanHandler) handleApproval(approvedBy string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	h.state = StateApproved
 
@@ -182,8 +214,23 @@ func (h *AutoPlanHandler) handleApproval(approvedBy string) {
 		}
 	}
 
-	if h.onApproved != nil {
-		h.onApproved(h.planIssueNumber, approvedBy)
+	// Add task to runner
+	h.runner.AddTask(h.planIssueNumber, h.planSummary)
+
+	onApproved := h.onApproved
+	issueNumber := h.planIssueNumber
+
+	h.mu.Unlock()
+
+	// Start auto runner in background
+	go func() {
+		if err := h.runner.Run(context.Background()); err != nil {
+			log.Printf("Auto runner failed for issue #%d: %v", issueNumber, err)
+		}
+	}()
+
+	if onApproved != nil {
+		onApproved(issueNumber, approvedBy)
 	}
 }
 
