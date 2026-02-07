@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/google/go-github/v60/github"
 	"golang.org/x/oauth2"
@@ -155,6 +156,57 @@ func (c *Client) CloseIssue(ctx context.Context, number int) error {
 		return fmt.Errorf("close issue: %w", err)
 	}
 	return nil
+}
+
+// ListIssueComments lists comments on an issue
+func (c *Client) ListIssueComments(ctx context.Context, number int) ([]*github.IssueComment, error) {
+	opts := &github.IssueListCommentsOptions{
+		ListOptions: github.ListOptions{
+			PerPage: 100,
+		},
+	}
+
+	var allComments []*github.IssueComment
+	for {
+		comments, resp, err := c.client.Issues.ListComments(ctx, c.owner, c.repo, number, opts)
+		if err != nil {
+			return nil, fmt.Errorf("list issue comments: %w", err)
+		}
+		allComments = append(allComments, comments...)
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return allComments, nil
+}
+
+// ListIssueCommentsSince lists comments on an issue created after a specific time
+func (c *Client) ListIssueCommentsSince(ctx context.Context, number int, since time.Time) ([]*github.IssueComment, error) {
+	opts := &github.IssueListCommentsOptions{
+		Since: &since,
+		ListOptions: github.ListOptions{
+			PerPage: 100,
+		},
+	}
+
+	var allComments []*github.IssueComment
+	for {
+		comments, resp, err := c.client.Issues.ListComments(ctx, c.owner, c.repo, number, opts)
+		if err != nil {
+			return nil, fmt.Errorf("list issue comments: %w", err)
+		}
+		allComments = append(allComments, comments...)
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return allComments, nil
 }
 
 // PR operations
