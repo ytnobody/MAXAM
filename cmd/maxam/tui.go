@@ -99,13 +99,6 @@ var (
 	footerStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("236"))
 
-	// YOLO mode indicator style
-	yoloStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF0000")).
-			Background(lipgloss.Color("#FFFF00")).
-			Bold(true).
-			Padding(0, 1)
-
 	// System message style for mention warnings
 	systemStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFD700")).
@@ -135,16 +128,16 @@ type tuiModel struct {
 	projectContext string
 	config         *config.Config // config for agent colors
 
-	viewport          viewport.Model
-	textInput         textinput.Model
-	messages          []tuiMessage
-	inputHist         []string
-	histIdx           int
-	tempInput         string
-	ready             bool
-	processingAgents  map[string]bool // 各エージェントの処理状態
-	width             int
-	height            int
+	viewport         viewport.Model
+	textInput        textinput.Model
+	messages         []tuiMessage
+	inputHist        []string
+	histIdx          int
+	tempInput        string
+	ready            bool
+	processingAgents map[string]bool // 各エージェントの処理状態
+	width            int
+	height           int
 
 	// View switching
 	currentView viewMode
@@ -170,9 +163,6 @@ type tuiModel struct {
 	// Analysis settings
 	analysisMinMessages int // 分析実行の最小メッセージ数
 
-	// YOLO mode - skip confirmations and auto-approve
-	yoloMode bool
-
 	// Error detection and automatic follow-up
 	errorDetector *errorwatch.Detector
 
@@ -183,11 +173,8 @@ type tuiModel struct {
 	mentionWarningCount map[string]int
 
 	// Issue list on idle
-	lastIssueListTime time.Time // 最後にIssue一覧を投稿した時刻
+	lastIssueListTime time.Time  // 最後にIssue一覧を投稿した時刻
 	ghClient          *gh.Client // GitHub client for issue list
-
-	// Mention checker toggle
-	mentionCheckerEnabled bool
 }
 
 type agentResponseMsg struct {
@@ -204,11 +191,11 @@ type analysisTickMsg struct {
 	time time.Time
 }
 
-const maxChainDepth = 1000          // 最大連鎖数
-const meiInterventionInterval = 10  // Meiが介入する間隔
+const maxChainDepth = 1000                // 最大連鎖数
+const meiInterventionInterval = 10        // Meiが介入する間隔
 const issueListInterval = 5 * time.Minute // Issue一覧投稿の最小間隔
-const issueListLimit = 20           // Issue一覧の最大表示件数
-const taskPrefix = "/task "          // 実装指示用プレフィックス
+const issueListLimit = 20                 // Issue一覧の最大表示件数
+const taskPrefix = "/task "               // 実装指示用プレフィックス
 
 func initialTuiModel(workDir string) tuiModel {
 	ti := textinput.New()
@@ -298,31 +285,29 @@ func initialTuiModel(workDir string) tuiModel {
 	}
 
 	return tuiModel{
-		agents:                agents,
-		members:               members,
-		router:                agentRouter,
-		logMgr:                logger.NewManager(logger.GetDefaultLogDir(), workDir),
-		history:               hist,
-		workDir:               workDir,
-		config:                cfg,
-		textInput:             ti,
-		messages:              messages,
-		inputHist:             make([]string, 0),
-		processingAgents:      make(map[string]bool),
-		histIdx:               -1,
-		currentView:           viewChat,
-		tasklist:              tasklistModel,
-		taskService:           taskService,
-		taskWatcher:           taskWatcher,
-		prWatcher:             prWatcher,
-		ccusageClient:         ccClient,
-		analysisMinMessages:   cfg.GetAnalysisMinMessages(),
-		yoloMode:              cfg.YOLOMode,
-		errorDetector:         errorwatch.DefaultDetector(),
-		workerPool:            workerPool,
-		ghClient:              ghClient,
-		mentionWarningCount:   make(map[string]int),
-		mentionCheckerEnabled: cfg.IsMentionCheckerEnabled(),
+		agents:              agents,
+		members:             members,
+		router:              agentRouter,
+		logMgr:              logger.NewManager(logger.GetDefaultLogDir(), workDir),
+		history:             hist,
+		workDir:             workDir,
+		config:              cfg,
+		textInput:           ti,
+		messages:            messages,
+		inputHist:           make([]string, 0),
+		processingAgents:    make(map[string]bool),
+		histIdx:             -1,
+		currentView:         viewChat,
+		tasklist:            tasklistModel,
+		taskService:         taskService,
+		taskWatcher:         taskWatcher,
+		prWatcher:           prWatcher,
+		ccusageClient:       ccClient,
+		analysisMinMessages: cfg.GetAnalysisMinMessages(),
+		errorDetector:       errorwatch.DefaultDetector(),
+		workerPool:          workerPool,
+		ghClient:            ghClient,
+		mentionWarningCount: make(map[string]int),
 	}
 }
 
@@ -448,37 +433,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// 画面再描画（表示崩れのリカバリ用）
 			m.updateViewport()
 			return m, tea.ClearScreen
-
-		case tea.KeyCtrlY:
-			// Toggle YOLO mode
-			m.yoloMode = !m.yoloMode
-			return m, nil
-
-		case tea.KeyCtrlN:
-			// Toggle mention checker
-			m.mentionCheckerEnabled = !m.mentionCheckerEnabled
-			// Save to config
-			m.config.SetMentionCheckerEnabled(m.mentionCheckerEnabled)
-			if err := config.SaveToProject(m.workDir, m.config); err != nil {
-				// Silent fail, just toggle in memory
-			}
-			// Clear warning if disabled
-			if !m.mentionCheckerEnabled {
-				m.mentionWarning = ""
-			}
-			return m, nil
-
-		case tea.KeyTab:
-			// Toggle between chat and taskboard view
-			if m.currentView == viewChat {
-				m.currentView = viewTaskboard
-				m.tasklist.SetFocused(true)
-				m.tasklist.Refresh()
-			} else {
-				m.currentView = viewChat
-				m.tasklist.SetFocused(false)
-			}
-			return m, nil
 
 		case tea.KeyEnter:
 			// タスクボードビューの場合はtasklistに委譲
@@ -783,30 +737,28 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			content: msg.content,
 		})
 
-		// Check for mention leaks in agent response and add to history (if enabled)
+		// Check for mention leaks in agent response and add to history
 		m.mentionWarning = ""
 		var triggerRetry bool
-		if m.mentionCheckerEnabled {
-			mentionResult := mention.Check(msg.content)
-			if mentionResult.NeedsWarning {
-				m.mentionWarning = mention.FormatWarning()
-				// Add warning to messages and history for agent responses
-				warningMsg := mention.FormatSystemWarning(m.getFullName(msg.agent))
-				m.messages = append(m.messages, tuiMessage{role: "system", content: warningMsg})
-				if m.history != nil {
-					m.history.Add("system", warningMsg)
-				}
-
-				// Increment consecutive warning count for this agent
-				m.mentionWarningCount[msg.agent]++
-				// Trigger retry if this is the first or second warning (allow 2 attempts)
-				if m.mentionWarningCount[msg.agent] <= 2 {
-					triggerRetry = true
-				}
-			} else {
-				// Reset warning count on successful mention
-				m.mentionWarningCount[msg.agent] = 0
+		mentionResult := mention.Check(msg.content)
+		if mentionResult.NeedsWarning {
+			m.mentionWarning = mention.FormatWarning()
+			// Add warning to messages and history for agent responses
+			warningMsg := mention.FormatSystemWarning(m.getFullName(msg.agent))
+			m.messages = append(m.messages, tuiMessage{role: "system", content: warningMsg})
+			if m.history != nil {
+				m.history.Add("system", warningMsg)
 			}
+
+			// Increment consecutive warning count for this agent
+			m.mentionWarningCount[msg.agent]++
+			// Trigger retry if this is the first or second warning (allow 2 attempts)
+			if m.mentionWarningCount[msg.agent] <= 2 {
+				triggerRetry = true
+			}
+		} else {
+			// Reset warning count on successful mention
+			m.mentionWarningCount[msg.agent] = 0
 		}
 
 		// projectContextを初回送信済みとしてマーク
@@ -864,8 +816,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.textInput, tiCmd = m.textInput.Update(msg)
 	cmds = append(cmds, tiCmd)
 
-	// Check for mention leaks in real-time as user types (if enabled)
-	if m.currentView == viewChat && m.mentionCheckerEnabled {
+	// Check for mention leaks in real-time as user types
+	if m.currentView == viewChat {
 		input := m.textInput.Value()
 		result := mention.Check(input)
 		if result.NeedsWarning {
@@ -1165,22 +1117,9 @@ func (m tuiModel) View() string {
 		return "読み込み中..."
 	}
 
-	// Header - ビューに応じてタイトルを切り替え（行全体に背景色）
-	var headerContent string
-	var modeIndicators string
-	if m.yoloMode {
-		modeIndicators += " " + yoloStyle.Render("YOLO")
-	}
-	if !m.mentionCheckerEnabled {
-		modeIndicators += " " + helpStyle.Render("[M:OFF]")
-	}
-	if m.currentView == viewTaskboard {
-		headerContent = titleStyle.Render("MAXAM "+Version) + modeIndicators + "  " +
-			helpStyle.Render("Task Board | Tab:チャット | ↑↓:選択 Enter:ステータス変更 d:削除")
-	} else {
-		headerContent = titleStyle.Render("MAXAM "+Version) + modeIndicators + "  " +
-			helpStyle.Render("Team Chat | Tab:タスクボード | Ctrl+Y:YOLO | Ctrl+N:メンション | Ctrl+L:再描画")
-	}
+	// Header（行全体に背景色）
+	headerContent := titleStyle.Render("MAXAM "+Version) + "  " +
+		helpStyle.Render("Team Chat | Ctrl+L:再描画")
 	// 行全体に背景色を適用（幅いっぱいにパディング）
 	header := headerStyle.Width(m.width).Render(headerContent)
 
@@ -1241,7 +1180,6 @@ func (m *tuiModel) detectAgents(text string) []string {
 	return m.router.Route(text)
 }
 
-
 // detectAgent は互換性のため残す（単一検出）
 func (m *tuiModel) detectAgent(text string) string {
 	agents := m.detectAgents(text)
@@ -1266,20 +1204,12 @@ func (m *tuiModel) buildPrompt(agentName, input string) string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString("重要:\n")
-	if m.yoloMode {
-		// YOLOモード: 確認をスキップして進める
-		sb.WriteString("- 【YOLOモード】オーナーはあなたを信頼しています。確認質問をせず、自分の判断で作業を進めてください\n")
-		sb.WriteString("- 短く自然な会話で返答してください\n")
-		sb.WriteString("- 他のメンバーに作業を依頼するときは「@名前」で呼びかけてください\n")
-		sb.WriteString("- 呼びかけられたら、その依頼に応答してください\n\n")
-	} else {
-		sb.WriteString("- 情報が不足していたら質問してください\n")
-		sb.WriteString("- 曖昧な指示には確認を取ってください\n")
-		sb.WriteString("- 作業前に計画を説明し、OKをもらってから進めてください\n")
-		sb.WriteString("- 短く自然な会話で返答してください\n")
-		sb.WriteString("- 他のメンバーに作業を依頼するときは「@名前」で呼びかけてください\n")
-		sb.WriteString("- 呼びかけられたら、その依頼に応答してください\n\n")
-	}
+	sb.WriteString("- 情報が不足していたら質問してください\n")
+	sb.WriteString("- 曖昧な指示には確認を取ってください\n")
+	sb.WriteString("- 作業前に計画を説明し、OKをもらってから進めてください\n")
+	sb.WriteString("- 短く自然な会話で返答してください\n")
+	sb.WriteString("- 他のメンバーに作業を依頼するときは「@名前」で呼びかけてください\n")
+	sb.WriteString("- 呼びかけられたら、その依頼に応答してください\n\n")
 
 	// Add project context (初回のみフル、以降は要約)
 	if m.projectContext != "" {
@@ -1707,10 +1637,10 @@ func isNoIssueResponse(response string) bool {
 
 // subProject はサブプロジェクトの情報を保持
 type subProject struct {
-	path     string // 相対パス
-	absPath  string // 絶対パス
-	readme   string // README.mdの内容（あれば）
-	hasGoMod bool
+	path           string // 相対パス
+	absPath        string // 絶対パス
+	readme         string // README.mdの内容（あれば）
+	hasGoMod       bool
 	hasPackageJSON bool
 }
 
