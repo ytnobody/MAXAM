@@ -124,6 +124,20 @@ func (m *Manager) AddIssue(issueNum int) {
 	}
 }
 
+// ShouldEnforceMention returns whether mention check should be enforced
+// Plan mode and Auto mode require mentions, Interactive mode does not
+func (m *Manager) ShouldEnforceMention() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	switch m.currentMode {
+	case config.ModePlan, config.ModeAuto:
+		return true
+	default:
+		return false
+	}
+}
+
 // StatusString returns a human-readable status string
 func (m *Manager) StatusString() string {
 	m.mu.RLock()

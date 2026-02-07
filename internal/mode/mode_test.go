@@ -232,3 +232,53 @@ func findSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+func TestShouldEnforceMention(t *testing.T) {
+	tests := []struct {
+		name     string
+		setup    func(*Manager)
+		expected bool
+	}{
+		{
+			name:     "interactive mode - OFF",
+			setup:    func(m *Manager) {},
+			expected: false,
+		},
+		{
+			name: "plan mode - ON",
+			setup: func(m *Manager) {
+				m.EnterPlanMode()
+			},
+			expected: true,
+		},
+		{
+			name: "auto mode - ON",
+			setup: func(m *Manager) {
+				m.EnterPlanMode()
+				m.EnterAutoMode(&PlanContext{Approved: true})
+			},
+			expected: true,
+		},
+		{
+			name: "after stop - OFF",
+			setup: func(m *Manager) {
+				m.EnterPlanMode()
+				m.EnterAutoMode(&PlanContext{Approved: true})
+				m.Stop()
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewManager(config.ModeInteractive)
+			tt.setup(m)
+
+			got := m.ShouldEnforceMention()
+			if got != tt.expected {
+				t.Errorf("ShouldEnforceMention() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
