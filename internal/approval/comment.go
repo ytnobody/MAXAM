@@ -22,6 +22,7 @@ var ApprovalKeywords = []string{
 	"approved",
 	"Approved",
 	"APPROVED",
+	"/approve",
 }
 
 // CommentChecker checks comments for approval signals
