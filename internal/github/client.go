@@ -240,3 +240,38 @@ func (c *Client) GetPRFiles(ctx context.Context, number int) ([]*github.CommitFi
 	}
 	return files, nil
 }
+
+// Label operations
+
+// AddLabel adds a label to an issue
+func (c *Client) AddLabel(ctx context.Context, number int, label string) error {
+	_, _, err := c.client.Issues.AddLabelsToIssue(ctx, c.owner, c.repo, number, []string{label})
+	if err != nil {
+		return fmt.Errorf("add label: %w", err)
+	}
+	return nil
+}
+
+// RemoveLabel removes a label from an issue
+func (c *Client) RemoveLabel(ctx context.Context, number int, label string) error {
+	_, err := c.client.Issues.RemoveLabelForIssue(ctx, c.owner, c.repo, number, label)
+	if err != nil {
+		return fmt.Errorf("remove label: %w", err)
+	}
+	return nil
+}
+
+// HasLabel checks if an issue has a specific label
+func (c *Client) HasLabel(ctx context.Context, number int, label string) (bool, error) {
+	issue, _, err := c.client.Issues.Get(ctx, c.owner, c.repo, number)
+	if err != nil {
+		return false, fmt.Errorf("get issue: %w", err)
+	}
+
+	for _, l := range issue.Labels {
+		if l.GetName() == label {
+			return true, nil
+		}
+	}
+	return false, nil
+}
