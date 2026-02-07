@@ -1206,6 +1206,140 @@ func TestSetMentionCheckerEnabled(t *testing.T) {
 	}
 }
 
+func TestValidModes(t *testing.T) {
+	modes := ValidModes()
+	if len(modes) != 3 {
+		t.Errorf("ValidModes() returned %d modes, want 3", len(modes))
+	}
+
+	expected := map[Mode]bool{ModeInteractive: true, ModePlan: true, ModeAuto: true}
+	for _, m := range modes {
+		if !expected[m] {
+			t.Errorf("Unexpected mode: %q", m)
+		}
+	}
+}
+
+func TestIsValidMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		mode     Mode
+		expected bool
+	}{
+		{
+			name:     "interactive is valid",
+			mode:     ModeInteractive,
+			expected: true,
+		},
+		{
+			name:     "plan is valid",
+			mode:     ModePlan,
+			expected: true,
+		},
+		{
+			name:     "auto is valid",
+			mode:     ModeAuto,
+			expected: true,
+		},
+		{
+			name:     "empty is invalid",
+			mode:     "",
+			expected: false,
+		},
+		{
+			name:     "unknown is invalid",
+			mode:     "unknown",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsValidMode(tt.mode)
+			if got != tt.expected {
+				t.Errorf("IsValidMode(%q) = %v, want %v", tt.mode, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetDefaultMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		expected Mode
+	}{
+		{
+			name:     "empty defaults to interactive",
+			cfg:      &Config{},
+			expected: ModeInteractive,
+		},
+		{
+			name:     "explicit interactive",
+			cfg:      &Config{DefaultMode: ModeInteractive},
+			expected: ModeInteractive,
+		},
+		{
+			name:     "explicit plan",
+			cfg:      &Config{DefaultMode: ModePlan},
+			expected: ModePlan,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.GetDefaultMode()
+			if got != tt.expected {
+				t.Errorf("GetDefaultMode() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMergeConfigsDefaultMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		base     *Config
+		override *Config
+		expected Mode
+	}{
+		{
+			name:     "base=empty, override=empty → interactive",
+			base:     &Config{},
+			override: &Config{},
+			expected: ModeInteractive,
+		},
+		{
+			name:     "base=plan, override=empty → plan",
+			base:     &Config{DefaultMode: ModePlan},
+			override: &Config{},
+			expected: ModePlan,
+		},
+		{
+			name:     "base=empty, override=plan → plan",
+			base:     &Config{},
+			override: &Config{DefaultMode: ModePlan},
+			expected: ModePlan,
+		},
+		{
+			name:     "base=interactive, override=plan → plan",
+			base:     &Config{DefaultMode: ModeInteractive},
+			override: &Config{DefaultMode: ModePlan},
+			expected: ModePlan,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			merged := mergeConfigs(tt.base, tt.override)
+			got := merged.GetDefaultMode()
+			if got != tt.expected {
+				t.Errorf("GetDefaultMode() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestMergeConfigsMentionChecker(t *testing.T) {
 	trueVal := true
 	falseVal := false

@@ -17,11 +17,39 @@ const (
 	ContextModeSummary ContextMode = "summary"
 )
 
+// Mode represents the MAXAM operating mode
+type Mode string
+
+const (
+	// ModeInteractive is for free-form conversation with the team
+	ModeInteractive Mode = "interactive"
+	// ModePlan is for automated project analysis and planning
+	ModePlan Mode = "plan"
+	// ModeAuto is for automated implementation (only accessible from plan mode)
+	ModeAuto Mode = "auto"
+)
+
+// ValidModes returns all valid mode values
+func ValidModes() []Mode {
+	return []Mode{ModeInteractive, ModePlan, ModeAuto}
+}
+
+// IsValidMode checks if the given mode is valid
+func IsValidMode(m Mode) bool {
+	for _, valid := range ValidModes() {
+		if m == valid {
+			return true
+		}
+	}
+	return false
+}
+
 // Config represents the MAXAM configuration
 type Config struct {
 	Version               string        `yaml:"version"`
 	TeamName              string        `yaml:"team_name,omitempty"`
 	DefaultAgent          string        `yaml:"default_agent,omitempty"`
+	DefaultMode           Mode          `yaml:"default_mode,omitempty"`
 	Agents                []AgentConfig `yaml:"agents"`
 	AnalysisMinMessages   int           `yaml:"analysis_min_messages,omitempty"`
 	ContextMode           ContextMode   `yaml:"context_mode,omitempty"`
@@ -208,6 +236,11 @@ func mergeConfigs(base, override *Config) *Config {
 		result.DefaultAgent = override.DefaultAgent
 	}
 
+	// Override default mode if set
+	if override.DefaultMode != "" {
+		result.DefaultMode = override.DefaultMode
+	}
+
 	// Override agents if specified (complete replacement)
 	if len(override.Agents) > 0 {
 		result.Agents = override.Agents
@@ -388,6 +421,14 @@ func (c *Config) GetTeamName() string {
 		return "Team"
 	}
 	return c.TeamName
+}
+
+// GetDefaultMode returns the default operating mode with fallback
+func (c *Config) GetDefaultMode() Mode {
+	if c.DefaultMode == "" {
+		return ModeInteractive
+	}
+	return c.DefaultMode
 }
 
 // IsMentionCheckerEnabled returns whether mention checker is enabled (default: true)
