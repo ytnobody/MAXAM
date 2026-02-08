@@ -725,6 +725,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		delete(m.processingAgents, msg.agent)
 
 		if msg.err != nil {
+			// Log error event
+			if log, err := m.logMgr.Get(msg.agent); err == nil {
+				log.Error("Request failed: %v", msg.err)
+			}
+
 			m.messages = append(m.messages, tuiMessage{
 				role:    msg.agent,
 				content: fmt.Sprintf("(エラー: %v)", msg.err),
@@ -797,9 +802,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Log
-		if len(m.messages) >= 2 {
-			userMsg := m.messages[len(m.messages)-2].content
-			if log, err := m.logMgr.Get(msg.agent); err == nil {
+		if log, err := m.logMgr.Get(msg.agent); err == nil {
+			// Event log (info level)
+			log.Info("Request completed in %v", msg.elapsed)
+
+			// Detailed log (debug level)
+			if len(m.messages) >= 2 {
+				userMsg := m.messages[len(m.messages)-2].content
 				log.LogSimple(userMsg, msg.content, msg.elapsed)
 			}
 		}
@@ -876,6 +885,11 @@ func (m *tuiModel) runAgentAsync(input string, targetAgent string, depth int) te
 			prompt = m.buildPrompt(agentName, input)
 		}
 
+		// Log chat start event
+		if log, err := m.logMgr.Get(agentName); err == nil {
+			log.Info("Chat started")
+		}
+
 		// Try to use worker pool first
 		if m.workerPool != nil {
 			if w, ok := m.workerPool.Get(agentName); ok {
@@ -937,6 +951,11 @@ func (m *tuiModel) runAgentAsync(input string, targetAgent string, depth int) te
 func (m *tuiModel) runTaskAsync(taskContent string, targetAgent string) tea.Cmd {
 	return func() tea.Msg {
 		prompt := m.buildTaskPrompt(targetAgent, taskContent)
+
+		// Log task start event
+		if log, err := m.logMgr.Get(targetAgent); err == nil {
+			log.Info("Task started: %s", taskContent)
+		}
 
 		// Worker pool経由でSendTask
 		if m.workerPool != nil {

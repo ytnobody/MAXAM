@@ -56,6 +56,7 @@ type Config struct {
 	YOLOMode              bool          `yaml:"yolo_mode,omitempty"`
 	WorkersPerAgent       int           `yaml:"workers_per_agent,omitempty"`
 	MentionCheckerEnabled *bool         `yaml:"mention_checker_enabled,omitempty"`
+	LogLevel              string        `yaml:"log_level,omitempty"`
 }
 
 // AgentConfig represents an agent configuration
@@ -271,6 +272,11 @@ func mergeConfigs(base, override *Config) *Config {
 		result.MentionCheckerEnabled = override.MentionCheckerEnabled
 	}
 
+	// Override log level if set
+	if override.LogLevel != "" {
+		result.LogLevel = override.LogLevel
+	}
+
 	return &result
 }
 
@@ -442,4 +448,12 @@ func (c *Config) IsMentionCheckerEnabled() bool {
 // SetMentionCheckerEnabled sets the mention checker enabled state
 func (c *Config) SetMentionCheckerEnabled(enabled bool) {
 	c.MentionCheckerEnabled = &enabled
+}
+
+// GetLogLevel returns the log level with default fallback ("info")
+func (c *Config) GetLogLevel() string {
+	if c.LogLevel == "" {
+		return "info"
+	}
+	return c.LogLevel
 }
