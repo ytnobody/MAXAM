@@ -252,3 +252,119 @@ func TestStatus_String(t *testing.T) {
 		t.Errorf("Expected status string to contain level, got %q", result)
 	}
 }
+
+// === Additional tests for edge cases (Shiori's review) ===
+
+func TestMonitor_Check_BoundaryValues(t *testing.T) {
+	m := NewMonitor(DefaultConfig())
+
+	tests := []struct {
+		name     string
+		size     int
+		expected Level
+	}{
+		// OK -> Warning boundary (70%)
+		{"just below warning 69.99%", 69990, LevelOK},
+		{"exactly at warning 70%", 70000, LevelWarning},
+		{"just above warning 70.01%", 70010, LevelWarning},
+
+		// Warning -> Critical boundary (85%)
+		{"just below critical 84.99%", 84990, LevelWarning},
+		{"exactly at critical 85%", 85000, LevelCritical},
+		{"just above critical 85.01%", 85010, LevelCritical},
+
+		// Critical -> Truncate boundary (95%)
+		{"just below truncate 94.99%", 94990, LevelCritical},
+		{"exactly at truncate 95%", 95000, LevelTruncate},
+		{"just above truncate 95.01%", 95010, LevelTruncate},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status := m.Check(tt.size)
+			if status.Level != tt.expected {
+				t.Errorf("Check(%d) Level = %v, want %v (percentage: %.4f%%)",
+					tt.size, status.Level, tt.expected, status.Percentage*100)
+			}
+		})
+	}
+}
+
+func TestMonitor_Check_ZeroAndNegativeValues(t *testing.T) {
+	m := NewMonitor(DefaultConfig())
+
+	tests := []struct {
+		name     string
+		size     int
+		expected Level
+	}{
+		{"zero size", 0, LevelOK},
+		{"negative size", -1, LevelOK},
+		{"large negative", -100000, LevelOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status := m.Check(tt.size)
+			if status.Level != tt.expected {
+				t.Errorf("Check(%d) Level = %v, want %v", tt.size, status.Level, tt.expected)
+			}
+			// Verify percentage calculation doesn't panic
+			if tt.size <= 0 && status.Percentage > 0 {
+				t.Errorf("Check(%d) Percentage = %v, expected <= 0", tt.size, status.Percentage)
+			}
+		})
+	}
+}
+
+func TestMonitor_Check_ExceedMaxChars(t *testing.T) {
+	m := NewMonitor(DefaultConfig())
+
+	tests := []struct {
+		name       string
+		size       int
+		expected   Level
+		minPercent float64
+	}{
+		{"exactly 100%", 100000, LevelTruncate, 1.0},
+		{"110% over max", 110000, LevelTruncate, 1.1},
+		{"200% double max", 200000, LevelTruncate, 2.0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status := m.Check(tt.size)
+			if status.Level != tt.expected {
+				t.Errorf("Check(%d) Level = %v, want %v", tt.size, status.Level, tt.expected)
+			}
+			if status.Percentage < tt.minPercent {
+				t.Errorf("Check(%d) Percentage = %v, want >= %v", tt.size, status.Percentage, tt.minPercent)
+			}
+		})
+	}
+}
+
+func TestMonitor_ShouldTruncate_EdgeCases(t *testing.T) {
+	m := NewMonitor(DefaultConfig())
+
+	tests := []struct {
+		name     string
+		size     int
+		expected bool
+	}{
+		{"zero", 0, false},
+		{"negative", -1, false},
+		{"just below 95%", 94999, false},
+		{"exactly 95%", 95000, true},
+		{"over 100%", 100001, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := m.ShouldTruncate(tt.size)
+			if result != tt.expected {
+				t.Errorf("ShouldTruncate(%d) = %v, want %v", tt.size, result, tt.expected)
+			}
+		})
+	}
+}
