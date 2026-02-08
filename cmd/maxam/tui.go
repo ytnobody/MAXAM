@@ -96,9 +96,17 @@ var (
 			Foreground(lipgloss.Color("241")).
 			Padding(0, 1)
 
-	// フッター行全体の背景色（控えめなダークグレー）
+	// フッター行全体の背景色（控えめなダークグレー）- Interactiveモード用
 	footerStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("236"))
+
+	// Planモード用フッター背景色（青系）
+	footerPlanStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#1E3A5F"))
+
+	// Autoモード用フッター背景色（緑系）
+	footerAutoStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#1E4D2B"))
 
 	// System message style for mention warnings
 	systemStyle = lipgloss.NewStyle().
@@ -1204,8 +1212,8 @@ func (m tuiModel) View() string {
 			}
 			statusContent = statusStyle.Render(statusText)
 		}
-		// ステータス行全体に背景色を適用
-		statusLine := footerStyle.Width(m.width).Render(statusContent)
+		// ステータス行全体に背景色を適用（モードに応じて色を変更）
+		statusLine := m.getFooterStyle().Width(m.width).Render(statusContent)
 
 		inputLine := "You: " + m.textInput.View()
 
@@ -1216,9 +1224,9 @@ func (m tuiModel) View() string {
 			footer = statusLine + "\n" + inputLine
 		}
 	} else {
-		// タスクボードビューのフッターにも背景色
+		// タスクボードビューのフッターにも背景色（モードに応じて色を変更）
 		footerContent := statusStyle.Render(" Tab:チャットに戻る ")
-		footer = footerStyle.Width(m.width).Render(footerContent)
+		footer = m.getFooterStyle().Width(m.width).Render(footerContent)
 	}
 
 	// Combine
@@ -1719,6 +1727,22 @@ func (m *tuiModel) renderModeIndicator() string {
 		return modeAutoStyle.Render("[Auto]")
 	default:
 		return modeInteractiveStyle.Render("[Interactive]")
+	}
+}
+
+// getFooterStyle はモードに応じたフッタースタイルを返す
+func (m *tuiModel) getFooterStyle() lipgloss.Style {
+	if m.modeManager == nil {
+		return footerStyle
+	}
+
+	switch m.modeManager.Current() {
+	case config.ModePlan:
+		return footerPlanStyle
+	case config.ModeAuto:
+		return footerAutoStyle
+	default:
+		return footerStyle
 	}
 }
 
