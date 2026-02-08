@@ -20,6 +20,7 @@ import (
 	"github.com/ytnobody/MAXAM/internal/approval"
 	"github.com/ytnobody/MAXAM/internal/ccusage"
 	"github.com/ytnobody/MAXAM/internal/config"
+	"github.com/ytnobody/MAXAM/internal/contextmon"
 	"github.com/ytnobody/MAXAM/internal/errorwatch"
 	gh "github.com/ytnobody/MAXAM/internal/github"
 	"github.com/ytnobody/MAXAM/internal/history"
@@ -211,6 +212,10 @@ type tuiModel struct {
 	approvalWatcher     *approval.Watcher
 	currentPlanIssue    int // Current plan issue number being watched
 	currentPlanIssueURL string
+
+	// Context size monitoring
+	contextMonitor *contextmon.Monitor
+	contextWarning string // Current context size warning message
 }
 
 type agentResponseMsg struct {
@@ -331,6 +336,9 @@ func initialTuiModel(workDir string) tuiModel {
 	// Setup control command handler
 	controlHandler := control.NewHandler(workerPool)
 
+	// Setup context monitor
+	ctxMonitor := contextmon.NewMonitor(contextmon.DefaultConfig())
+
 	return tuiModel{
 		agents:              agents,
 		members:             members,
@@ -359,6 +367,7 @@ func initialTuiModel(workDir string) tuiModel {
 		modeManager:         modeManager,
 		planExecutor:        planExecutor,
 		approvalWatcher:     approvalWatcher,
+		contextMonitor:      ctxMonitor,
 	}
 }
 
@@ -1167,7 +1176,19 @@ func (m *tuiModel) buildTaskPrompt(agentName, taskContent string) string {
 	sb.WriteString("## 実装タスク\n\n")
 	sb.WriteString(fmt.Sprintf("オーナーからの指示: %s\n", taskContent))
 
-	return sb.String()
+	prompt := sb.String()
+
+	// Check context size and update warning
+	if m.contextMonitor != nil {
+		status := m.contextMonitor.Check(len(prompt))
+		if status.Level >= contextmon.LevelWarning {
+			m.contextWarning = status.FormatWarning()
+		} else {
+			m.contextWarning = ""
+		}
+	}
+
+	return prompt
 }
 
 // buildMeiInterventionPrompt はMeiが会話をまとめるためのプロンプト
@@ -1321,9 +1342,17 @@ func (m tuiModel) View() string {
 
 		inputLine := "You: " + m.textInput.View()
 
-		// Add mention warning if needed
+		// Build warning lines (combine mention and context warnings)
+		var warningLines []string
 		if m.mentionWarning != "" {
-			footer = statusLine + "\n" + warningStyle.Render("⚠️ "+m.mentionWarning) + "\n" + inputLine
+			warningLines = append(warningLines, warningStyle.Render("⚠️ "+m.mentionWarning))
+		}
+		if m.contextWarning != "" {
+			warningLines = append(warningLines, warningStyle.Render(m.contextWarning))
+		}
+
+		if len(warningLines) > 0 {
+			footer = statusLine + "\n" + strings.Join(warningLines, "\n") + "\n" + inputLine
 		} else {
 			footer = statusLine + "\n" + inputLine
 		}
@@ -1415,7 +1444,19 @@ func (m *tuiModel) buildPrompt(agentName, input string) string {
 		sb.WriteString(fmt.Sprintf("オーナー: %s\n", input))
 	}
 
-	return sb.String()
+	prompt := sb.String()
+
+	// Check context size and update warning
+	if m.contextMonitor != nil {
+		status := m.contextMonitor.Check(len(prompt))
+		if status.Level >= contextmon.LevelWarning {
+			m.contextWarning = status.FormatWarning()
+		} else {
+			m.contextWarning = ""
+		}
+	}
+
+	return prompt
 }
 
 // selectHistoryMessages は履歴メッセージを動的に選択
