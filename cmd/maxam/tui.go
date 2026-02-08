@@ -15,6 +15,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
+	"github.com/ytnobody/MAXAM/internal/agent/control"
 	"github.com/ytnobody/MAXAM/internal/agent/worker"
 	"github.com/ytnobody/MAXAM/internal/approval"
 	"github.com/ytnobody/MAXAM/internal/ccusage"
@@ -192,6 +193,9 @@ type tuiModel struct {
 	// Worker pool for goroutine separation
 	workerPool *worker.Pool
 
+	// Control command handler for stop/resume
+	controlHandler *control.Handler
+
 	// Mention warning chain prevention (consecutive warning count per agent)
 	mentionWarningCount map[string]int
 
@@ -324,6 +328,9 @@ func initialTuiModel(workDir string) tuiModel {
 		}
 	}
 
+	// Setup control command handler
+	controlHandler := control.NewHandler(workerPool)
+
 	return tuiModel{
 		agents:              agents,
 		members:             members,
@@ -346,6 +353,7 @@ func initialTuiModel(workDir string) tuiModel {
 		analysisMinMessages: cfg.GetAnalysisMinMessages(),
 		errorDetector:       errorwatch.DefaultDetector(),
 		workerPool:          workerPool,
+		controlHandler:      controlHandler,
 		ghClient:            ghClient,
 		mentionWarningCount: make(map[string]int),
 		modeManager:         modeManager,
@@ -533,6 +541,23 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if result := mode.Parse(input); result.IsCommand {
 				m.textInput.SetValue("")
 				return m.handleModeCommand(result)
+			}
+
+			// Handle control commands (@agent stop, @agent resume, stop all, resume all)
+			if m.controlHandler != nil {
+				if result := m.controlHandler.Handle(input); result != nil {
+					m.textInput.SetValue("")
+					icon := "✅"
+					if !result.Success {
+						icon = "❌"
+					}
+					m.messages = append(m.messages, tuiMessage{
+						role:    "system",
+						content: fmt.Sprintf("%s %s", icon, result.Message),
+					})
+					m.updateViewport()
+					return m, nil
+				}
 			}
 
 			// Save to input history
@@ -1805,9 +1830,19 @@ func (m *tuiModel) handleModeCommand(result mode.ParseResult) (tea.Model, tea.Cm
 
 	case mode.CommandStatus:
 		status := m.modeManager.StatusString()
+		statusContent := fmt.Sprintf("📊 現在のモード: %s", status)
+
+		// Show stopped agents if any
+		if m.workerPool != nil {
+			stoppedAgents := m.workerPool.GetStoppedWorkers()
+			if len(stoppedAgents) > 0 {
+				statusContent += fmt.Sprintf("\n⏸️ 停止中のエージェント: %s", strings.Join(stoppedAgents, ", "))
+			}
+		}
+
 		m.messages = append(m.messages, tuiMessage{
 			role:    "system",
-			content: fmt.Sprintf("📊 現在のモード: %s", status),
+			content: statusContent,
 		})
 	}
 

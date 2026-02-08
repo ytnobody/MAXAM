@@ -97,6 +97,21 @@ func (w *Worker) Name() string {
 	return w.name
 }
 
+// Pause requests the worker to stop after completing current task
+func (w *Worker) Pause() {
+	w.state.RequestStop()
+}
+
+// Resume resumes a stopped worker
+func (w *Worker) Resume() {
+	w.state.Resume()
+}
+
+// IsStopped returns true if the worker is stopped
+func (w *Worker) IsStopped() bool {
+	return w.state.IsStopped()
+}
+
 // SendChat sends a chat request and returns immediately
 // The response will be sent to the provided channel
 func (w *Worker) SendChat(input string, response chan<- ChatResponse) {
@@ -135,6 +150,16 @@ func (w *Worker) chatLoop() {
 
 // handleChat processes a single chat request
 func (w *Worker) handleChat(req ChatRequest) {
+	// If stopped, return stopped message
+	if w.state.IsStopped() {
+		req.Response <- ChatResponse{
+			Content: "停止中です。resumeコマンドで再開してください。",
+			Elapsed: 0,
+			Err:     nil,
+		}
+		return
+	}
+
 	// If working, return status message without calling LLM
 	if w.state.IsWorking() {
 		status := w.state.GetStatus()
@@ -166,6 +191,9 @@ func (w *Worker) handleChat(req ChatRequest) {
 	}
 }
 
+// ErrAgentStopped is returned when attempting to send a task to a stopped agent
+var ErrAgentStopped = fmt.Errorf("agent is stopped")
+
 // taskLoop handles task requests
 func (w *Worker) taskLoop() {
 	defer w.wg.Done()
@@ -177,6 +205,13 @@ func (w *Worker) taskLoop() {
 		case req, ok := <-w.taskChan:
 			if !ok {
 				return
+			}
+			// Reject task if stopped
+			if w.state.IsStopped() {
+				req.Response <- TaskResponse{
+					Err: ErrAgentStopped,
+				}
+				continue
 			}
 			w.handleTask(req)
 		}
@@ -280,4 +315,57 @@ func (p *Pool) All() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// PauseAll pauses all workers
+func (p *Pool) PauseAll() {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, w := range p.workers {
+		w.Pause()
+	}
+}
+
+// ResumeAll resumes all workers
+func (p *Pool) ResumeAll() {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, w := range p.workers {
+		w.Resume()
+	}
+}
+
+// Pause pauses a specific worker by name
+func (p *Pool) Pause(name string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if w, ok := p.workers[name]; ok {
+		w.Pause()
+		return true
+	}
+	return false
+}
+
+// Resume resumes a specific worker by name
+func (p *Pool) Resume(name string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if w, ok := p.workers[name]; ok {
+		w.Resume()
+		return true
+	}
+	return false
+}
+
+// GetStoppedWorkers returns names of stopped workers
+func (p *Pool) GetStoppedWorkers() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	stopped := make([]string, 0)
+	for name, w := range p.workers {
+		if w.IsStopped() {
+			stopped = append(stopped, name)
+		}
+	}
+	return stopped
 }
