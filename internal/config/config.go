@@ -466,6 +466,21 @@ func (c *Config) GetLogLevel() string {
 	return c.LogLevel
 }
 
+// LoadFromPath loads configuration from a specific file path
+func LoadFromPath(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	return &cfg, nil
+}
+
 // DefaultHeartbeatInterval is the default heartbeat monitoring interval
 const DefaultHeartbeatInterval = "10s"
 

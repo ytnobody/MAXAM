@@ -30,6 +30,8 @@ func main() {
 	cmd := os.Args[1]
 
 	switch cmd {
+	case "init":
+		runInit()
 	case "task":
 		runTaskLegacy()
 	case "team":
@@ -63,6 +65,7 @@ Usage:
   maxam <command> [arguments]
 
 Commands:
+  init                 Initialize MAXAM in current project
   (none)               Launch team chat TUI (default)
   chat <agent>         Interactive chat with an agent (mei/yuki/rin/shiori/priya/amara/team)
   chat team --daemon   Daemon mode: wait for input continuously (for external integration)
