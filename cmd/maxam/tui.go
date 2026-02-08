@@ -509,16 +509,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateViewport()
 
 			// /task プレフィックスで分岐: SendTask or SendChat
+			// 処理中でもWorkerに送信し、作業中ならWorkerが即座にステータスを返す
 			if strings.HasPrefix(input, taskPrefix) {
 				// /task 〇〇 → 実装指示として SendTask を使う
 				taskContent := strings.TrimPrefix(input, taskPrefix)
 				targetAgents := m.detectAgents(taskContent)
 				var cmds []tea.Cmd
 				for _, agentName := range targetAgents {
-					if !m.processingAgents[agentName] {
-						m.processingAgents[agentName] = true
-						cmds = append(cmds, m.runTaskAsync(taskContent, agentName))
-					}
+					m.processingAgents[agentName] = true
+					cmds = append(cmds, m.runTaskAsync(taskContent, agentName))
 				}
 				if len(cmds) > 0 {
 					m.updateViewport()
@@ -528,14 +527,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// 通常の会話として SendChat を使う
+			// 処理中でもWorkerに送信し、作業中ならWorkerが即座にステータスを返す
 			targetAgents := m.detectAgents(input)
 			var cmds []tea.Cmd
 			for _, agentName := range targetAgents {
-				// そのエージェントが処理中でなければ開始
-				if !m.processingAgents[agentName] {
-					m.processingAgents[agentName] = true
-					cmds = append(cmds, m.runAgentAsync(input, agentName, 0))
-				}
+				m.processingAgents[agentName] = true
+				cmds = append(cmds, m.runAgentAsync(input, agentName, 0))
 			}
 
 			if len(cmds) > 0 {

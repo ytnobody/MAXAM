@@ -101,6 +101,39 @@ func TestWorkerChatWhileWorking(t *testing.T) {
 	})
 }
 
+func TestWorkerTaskWhileWorking(t *testing.T) {
+	t.Run("returns busy message when already working on task", func(t *testing.T) {
+		// Create a worker with nil runner (won't be used for busy response)
+		w := NewWorker("yuki", nil)
+		w.Start()
+		defer w.Stop()
+
+		// Set state to working (simulating existing task)
+		w.state.StartTask("#90 実装中")
+
+		// Send another task request
+		responseChan := make(chan TaskResponse, 1)
+		w.SendTask("#91 も頼まれた", "prompt", responseChan)
+
+		// Should get immediate busy response
+		select {
+		case resp := <-responseChan:
+			if resp.Err != nil {
+				t.Errorf("unexpected error: %v", resp.Err)
+			}
+			if resp.Content == "" {
+				t.Error("expected non-empty response")
+			}
+			// Should contain task description
+			if len(resp.Content) < 10 {
+				t.Errorf("expected response to contain task info, got '%s'", resp.Content)
+			}
+		case <-time.After(1 * time.Second):
+			t.Error("timeout waiting for response")
+		}
+	})
+}
+
 func TestPool(t *testing.T) {
 	t.Run("add and get worker", func(t *testing.T) {
 		pool := NewPool()
