@@ -16,6 +16,7 @@ import (
 
 	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/agent/worker"
+	"github.com/ytnobody/MAXAM/internal/approval"
 	"github.com/ytnobody/MAXAM/internal/ccusage"
 	"github.com/ytnobody/MAXAM/internal/config"
 	"github.com/ytnobody/MAXAM/internal/errorwatch"
@@ -200,6 +201,12 @@ type tuiModel struct {
 
 	// Mode manager for operating mode control
 	modeManager *mode.Manager
+
+	// Plan mode components
+	planExecutor        *mode.PlanExecutor
+	approvalWatcher     *approval.Watcher
+	currentPlanIssue    int // Current plan issue number being watched
+	currentPlanIssueURL string
 }
 
 type agentResponseMsg struct {
@@ -269,9 +276,17 @@ func initialTuiModel(workDir string) tuiModel {
 	// Setup PR watcher for worktree cleanup (silently fail if no GitHub access)
 	var prWatcher *gh.Watcher
 	var ghClient *gh.Client
+	var planExecutor *mode.PlanExecutor
+	var approvalWatcher *approval.Watcher
+	modeManager := mode.NewManager(config.ModeInteractive)
+
 	if client, err := gh.NewClient("ytnobody", "MAXAM"); err == nil {
 		ghClient = client
 		prWatcher = gh.NewWatcher(ghClient)
+
+		// Setup plan mode components
+		planExecutor = mode.NewPlanExecutor(ghClient, nil)
+		approvalWatcher = approval.NewWatcher(ghClient)
 	}
 
 	// Setup ccusage client (silently disabled if not available)
@@ -333,7 +348,9 @@ func initialTuiModel(workDir string) tuiModel {
 		workerPool:          workerPool,
 		ghClient:            ghClient,
 		mentionWarningCount: make(map[string]int),
-		modeManager:         mode.NewManager(config.ModeInteractive),
+		modeManager:         modeManager,
+		planExecutor:        planExecutor,
+		approvalWatcher:     approvalWatcher,
 	}
 }
 
@@ -355,6 +372,22 @@ type ccusageUpdateMsg struct {
 
 // ccusageTickMsg triggers periodic ccusage updates
 type ccusageTickMsg struct{}
+
+// planWorkflowMsg is sent when plan workflow completes or fails
+type planWorkflowMsg struct {
+	issueNumber int
+	issueURL    string
+	err         error
+}
+
+// planApprovalTickMsg is sent periodically to check for plan approval
+type planApprovalTickMsg struct{}
+
+// planApprovedMsg is sent when a plan is approved
+type planApprovedMsg struct {
+	issueNumber int
+	approvedBy  string
+}
 
 // issueListMsg is sent when issue list is fetched
 type issueListMsg struct {
@@ -723,6 +756,52 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.updateViewport()
 		}
+		return m, nil
+
+	case planWorkflowMsg:
+		if msg.err != nil {
+			// Plan workflow failed
+			m.modeManager.Stop() // Rollback to interactive
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: fmt.Sprintf("❌ Planモード開始に失敗: %s", msg.err.Error()),
+			})
+			m.updateViewport()
+			return m, nil
+		}
+
+		// Plan issue created successfully
+		m.messages = append(m.messages, tuiMessage{
+			role:    "system",
+			content: fmt.Sprintf("✅ 議論用Issueを作成しました: %s\n承認待ち中... (IssueにOK/LGTMとコメントしてください)", msg.issueURL),
+		})
+		m.updateViewport()
+
+		// Start approval polling
+		if m.approvalWatcher != nil {
+			m.currentPlanIssue = msg.issueNumber
+			m.currentPlanIssueURL = msg.issueURL
+			m.approvalWatcher.Watch(msg.issueNumber)
+		}
+
+		return m, m.tickPlanApproval()
+
+	case planApprovalTickMsg:
+		// Check for plan approval if in plan mode
+		if m.modeManager.Current() == config.ModePlan && m.approvalWatcher != nil && m.currentPlanIssue > 0 {
+			return m, tea.Batch(
+				m.checkPlanApproval(),
+				m.tickPlanApproval(),
+			)
+		}
+		return m, nil
+
+	case planApprovedMsg:
+		m.messages = append(m.messages, tuiMessage{
+			role:    "system",
+			content: fmt.Sprintf("🎉 Issue #%d が %s に承認されました！Autoモードに移行します。", msg.issueNumber, msg.approvedBy),
+		})
+		m.updateViewport()
 		return m, nil
 
 	case agentResponseMsg:
@@ -1682,19 +1761,42 @@ func (m *tuiModel) fetchIssueList() tea.Cmd {
 func (m *tuiModel) handleModeCommand(result mode.ParseResult) (tea.Model, tea.Cmd) {
 	switch result.Command {
 	case mode.CommandPlan:
+		// Check if plan mode components are available
+		if m.planExecutor == nil || m.ghClient == nil {
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: "⚠️ GitHub連携が設定されていないため、Planモードを使用できません。",
+			})
+			m.updateViewport()
+			return m, nil
+		}
+
+		// Enter plan mode first
 		if err := m.modeManager.EnterPlanMode(); err != nil {
 			m.messages = append(m.messages, tuiMessage{
 				role:    "system",
 				content: fmt.Sprintf("⚠️ %s", err.Error()),
 			})
-		} else {
-			m.messages = append(m.messages, tuiMessage{
-				role:    "system",
-				content: "🎯 Planモードに切り替えました。マイルストーン計画を開始します。",
-			})
+			m.updateViewport()
+			return m, nil
 		}
 
+		m.messages = append(m.messages, tuiMessage{
+			role:    "system",
+			content: "🎯 Planモードに切り替えました。プロジェクト分析中...",
+		})
+		m.updateViewport()
+
+		// Start plan workflow asynchronously
+		return m, m.startPlanWorkflow()
+
 	case mode.CommandStop:
+		// Stop approval watching if active
+		if m.approvalWatcher != nil && m.currentPlanIssue > 0 {
+			m.approvalWatcher.Unwatch(m.currentPlanIssue)
+			m.currentPlanIssue = 0
+			m.currentPlanIssueURL = ""
+		}
 		m.modeManager.Stop()
 		m.messages = append(m.messages, tuiMessage{
 			role:    "system",
@@ -1711,6 +1813,105 @@ func (m *tuiModel) handleModeCommand(result mode.ParseResult) (tea.Model, tea.Cm
 
 	m.updateViewport()
 	return m, nil
+}
+
+// startPlanWorkflow starts the plan workflow asynchronously
+// Analyzes project → Creates plan issue → Starts approval polling
+func (m *tuiModel) startPlanWorkflow() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		// Step 1: Analyze project
+		analysis, err := m.planExecutor.AnalyzeProject(ctx)
+		if err != nil {
+			return planWorkflowMsg{err: fmt.Errorf("プロジェクト分析に失敗: %w", err)}
+		}
+
+		// Step 2: Generate proposal based on analysis
+		proposal := m.generatePlanProposal(analysis)
+
+		// Step 3: Create plan issue
+		planIssue, err := m.planExecutor.CreatePlanIssue(ctx, analysis, proposal)
+		if err != nil {
+			return planWorkflowMsg{err: fmt.Errorf("Issue作成に失敗: %w", err)}
+		}
+
+		return planWorkflowMsg{
+			issueNumber: planIssue.IssueNumber,
+			issueURL:    planIssue.URL,
+		}
+	}
+}
+
+// generatePlanProposal generates a plan proposal based on project analysis
+func (m *tuiModel) generatePlanProposal(analysis *mode.ProjectAnalysis) string {
+	var sb strings.Builder
+
+	sb.WriteString("## 次のマイルストーン提案\n\n")
+
+	// Based on open issues
+	if analysis.OpenIssues > 0 {
+		sb.WriteString(fmt.Sprintf("現在 %d件のオープンIssueがあります。\n\n", analysis.OpenIssues))
+	}
+
+	if analysis.UnassignedIssues > 0 {
+		sb.WriteString(fmt.Sprintf("### 未アサインのIssue: %d件\n", analysis.UnassignedIssues))
+		sb.WriteString("これらのIssueへのアサインを検討してください。\n\n")
+	}
+
+	if analysis.OldestOpenIssue != nil {
+		age := time.Since(analysis.OldestOpenIssue.CreatedAt)
+		days := int(age.Hours() / 24)
+		sb.WriteString(fmt.Sprintf("### 最優先で対応すべきIssue\n"))
+		sb.WriteString(fmt.Sprintf("- #%d: %s (%d日前に作成)\n\n",
+			analysis.OldestOpenIssue.Number,
+			analysis.OldestOpenIssue.Title,
+			days))
+	}
+
+	// Add recommendation
+	sb.WriteString("### アクション案\n")
+	sb.WriteString("1. 上記の優先Issueから着手する\n")
+	sb.WriteString("2. 未アサインのIssueを担当者に振り分ける\n")
+	sb.WriteString("3. ラベルで優先度を整理する\n")
+
+	return sb.String()
+}
+
+// tickPlanApproval returns a command that triggers plan approval check
+func (m *tuiModel) tickPlanApproval() tea.Cmd {
+	return tea.Tick(30*time.Second, func(t time.Time) tea.Msg {
+		return planApprovalTickMsg{}
+	})
+}
+
+// checkPlanApproval checks for plan approval
+func (m *tuiModel) checkPlanApproval() tea.Cmd {
+	return func() tea.Msg {
+		if m.approvalWatcher == nil || m.currentPlanIssue == 0 {
+			return nil
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		events, err := m.approvalWatcher.CheckOnce(ctx)
+		if err != nil {
+			return nil // Silently ignore errors
+		}
+
+		for _, event := range events {
+			if event.IssueNumber == m.currentPlanIssue && event.Result.Approved {
+				return planApprovedMsg{
+					issueNumber: event.IssueNumber,
+					approvedBy:  event.Result.ApprovedBy,
+				}
+			}
+		}
+
+		return nil
+	}
 }
 
 // renderModeIndicator はモード表示用の文字列を返す
