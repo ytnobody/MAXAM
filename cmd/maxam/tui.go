@@ -869,6 +869,14 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					content: fmt.Sprintf("[自動声かけ] %s", followUpResult.Message),
 				})
 
+				// Add system message about auto mode switch
+				if followUpResult.SwitchedToAuto {
+					m.messages = append(m.messages, tuiMessage{
+						role:    "system",
+						content: fmt.Sprintf("[autoモード] %s をautoモードに切り替えました（手動で戻す必要があります）", msg.agent),
+					})
+				}
+
 				// Trigger PM to send follow-up message
 				m.processingAgents[pmAgent] = true
 				m.updateViewport()
@@ -1881,10 +1889,57 @@ func (m *tuiModel) handleModeCommand(result mode.ParseResult) (tea.Model, tea.Cm
 			}
 		}
 
+		// Show agents in auto mode
+		if m.errorDetector != nil {
+			autoAgents := m.errorDetector.ModeManager().AllAutoAgents()
+			if len(autoAgents) > 0 {
+				statusContent += fmt.Sprintf("\n🔄 autoモードのエージェント: %s", strings.Join(autoAgents, ", "))
+			}
+		}
+
 		m.messages = append(m.messages, tuiMessage{
 			role:    "system",
 			content: statusContent,
 		})
+
+	case mode.CommandResetAuto:
+		// Reset agent auto mode
+		if m.errorDetector == nil {
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: "⚠️ エラー検出が初期化されていません。",
+			})
+		} else if result.Args == "" {
+			// Reset all agents
+			autoAgents := m.errorDetector.ModeManager().AllAutoAgents()
+			if len(autoAgents) == 0 {
+				m.messages = append(m.messages, tuiMessage{
+					role:    "system",
+					content: "ℹ️ autoモードのエージェントはいません。",
+				})
+			} else {
+				m.errorDetector.ModeManager().ResetAll()
+				m.messages = append(m.messages, tuiMessage{
+					role:    "system",
+					content: fmt.Sprintf("✅ 全エージェントのautoモードをリセットしました: %s", strings.Join(autoAgents, ", ")),
+				})
+			}
+		} else {
+			// Reset specific agent
+			agentName := result.Args
+			if m.errorDetector.IsAgentInAutoMode(agentName) {
+				m.errorDetector.ResetAgentMode(agentName)
+				m.messages = append(m.messages, tuiMessage{
+					role:    "system",
+					content: fmt.Sprintf("✅ %s のautoモードをリセットしました。", agentName),
+				})
+			} else {
+				m.messages = append(m.messages, tuiMessage{
+					role:    "system",
+					content: fmt.Sprintf("ℹ️ %s はautoモードではありません。", agentName),
+				})
+			}
+		}
 	}
 
 	m.updateViewport()
@@ -1997,14 +2052,25 @@ func (m *tuiModel) renderModeIndicator() string {
 	}
 
 	currentMode := m.modeManager.Current()
+	var modeStr string
 	switch currentMode {
 	case config.ModePlan:
-		return modePlanStyle.Render("[Plan]")
+		modeStr = modePlanStyle.Render("[Plan]")
 	case config.ModeAuto:
-		return modeAutoStyle.Render("[Auto]")
+		modeStr = modeAutoStyle.Render("[Auto]")
 	default:
-		return modeInteractiveStyle.Render("[Interactive]")
+		modeStr = modeInteractiveStyle.Render("[Interactive]")
 	}
+
+	// Show agents in auto mode (per-agent auto mode)
+	if m.errorDetector != nil {
+		autoAgents := m.errorDetector.ModeManager().AllAutoAgents()
+		if len(autoAgents) > 0 {
+			modeStr += " " + warningStyle.Render(fmt.Sprintf("🔄 auto: %s", strings.Join(autoAgents, ", ")))
+		}
+	}
+
+	return modeStr
 }
 
 // getFooterStyle はモードに応じたフッタースタイルを返す

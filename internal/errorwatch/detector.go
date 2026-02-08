@@ -14,13 +14,15 @@ var ErrorPatterns = []string{
 	"timeout",
 	"connection refused",
 	"connection reset",
+	"exit status 1",
 }
 
 // Detector detects error patterns and manages follow-up cooldowns.
 type Detector struct {
-	mu              sync.Mutex
-	lastFollowUp    map[string]time.Time
-	cooldownPeriod  time.Duration
+	mu             sync.Mutex
+	lastFollowUp   map[string]time.Time
+	cooldownPeriod time.Duration
+	modeManager    *AgentModeManager
 }
 
 // NewDetector creates a new error detector with the specified cooldown period.
@@ -28,6 +30,7 @@ func NewDetector(cooldownPeriod time.Duration) *Detector {
 	return &Detector{
 		lastFollowUp:   make(map[string]time.Time),
 		cooldownPeriod: cooldownPeriod,
+		modeManager:    NewAgentModeManager(),
 	}
 }
 
@@ -84,4 +87,35 @@ func (d *Detector) ResetAll() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.lastFollowUp = make(map[string]time.Time)
+}
+
+// HandleError processes an error and switches to auto mode if applicable.
+// Returns true if the agent was switched to auto mode.
+func (d *Detector) HandleError(agentName string, errMsg string) bool {
+	if !IsRecoverableError(errMsg) {
+		return false
+	}
+
+	d.modeManager.SwitchToAuto(agentName, errMsg)
+	return true
+}
+
+// ModeManager returns the agent mode manager.
+func (d *Detector) ModeManager() *AgentModeManager {
+	return d.modeManager
+}
+
+// SetModeManager sets a custom agent mode manager.
+func (d *Detector) SetModeManager(m *AgentModeManager) {
+	d.modeManager = m
+}
+
+// IsAgentInAutoMode checks if an agent is in auto mode.
+func (d *Detector) IsAgentInAutoMode(agentName string) bool {
+	return d.modeManager.IsAuto(agentName)
+}
+
+// ResetAgentMode resets an agent to normal mode.
+func (d *Detector) ResetAgentMode(agentName string) {
+	d.modeManager.SwitchToNormal(agentName)
 }
