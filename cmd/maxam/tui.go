@@ -488,6 +488,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			// Handle mode commands (/plan, /stop, /status)
+			if result := mode.Parse(input); result.IsCommand {
+				m.textInput.SetValue("")
+				return m.handleModeCommand(result)
+			}
+
 			// Save to input history
 			m.inputHist = append(m.inputHist, input)
 			m.histIdx = len(m.inputHist)
@@ -1636,6 +1642,41 @@ func (m *tuiModel) fetchIssueList() tea.Cmd {
 
 		return issueListMsg{issues: result}
 	}
+}
+
+// handleModeCommand はモードコマンドを処理する
+func (m *tuiModel) handleModeCommand(result mode.ParseResult) (tea.Model, tea.Cmd) {
+	switch result.Command {
+	case mode.CommandPlan:
+		if err := m.modeManager.EnterPlanMode(); err != nil {
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: fmt.Sprintf("⚠️ %s", err.Error()),
+			})
+		} else {
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: "🎯 Planモードに切り替えました。マイルストーン計画を開始します。",
+			})
+		}
+
+	case mode.CommandStop:
+		m.modeManager.Stop()
+		m.messages = append(m.messages, tuiMessage{
+			role:    "system",
+			content: "💬 Interactiveモードに戻りました。",
+		})
+
+	case mode.CommandStatus:
+		status := m.modeManager.StatusString()
+		m.messages = append(m.messages, tuiMessage{
+			role:    "system",
+			content: fmt.Sprintf("📊 現在のモード: %s", status),
+		})
+	}
+
+	m.updateViewport()
+	return m, nil
 }
 
 // renderModeIndicator はモード表示用の文字列を返す
