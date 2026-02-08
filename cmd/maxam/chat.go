@@ -114,7 +114,7 @@ func runChat() {
 	session := &ChatSession{
 		agents:       agent.NewAgents(workDir),
 		members:      member.NewMembers(workDir),
-		logMgr:       logger.NewManager(logger.GetDefaultLogDir(), workDir),
+		logMgr:       logger.NewManagerWithLevel(logger.GetDefaultLogDir(), workDir, logger.ParseLogLevel(cfg.GetLogLevel())),
 		workDir:      workDir,
 		history:      make([]chatMessage, 0),
 		mentionCheck: flags.mentionCheck,
