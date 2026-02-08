@@ -10,6 +10,8 @@ type Command string
 const (
 	// CommandPlan enters plan mode
 	CommandPlan Command = "/plan"
+	// CommandAuto enters auto mode directly (without plan)
+	CommandAuto Command = "/auto"
 	// CommandStop stops current mode and returns to interactive
 	CommandStop Command = "/stop"
 	// CommandStatus shows current mode status
@@ -30,7 +32,7 @@ func Parse(input string) ParseResult {
 	trimmed := strings.TrimSpace(input)
 
 	// Check for known commands
-	commands := []Command{CommandPlan, CommandStop, CommandStatus, CommandResetAuto}
+	commands := []Command{CommandPlan, CommandAuto, CommandStop, CommandStatus, CommandResetAuto}
 	for _, cmd := range commands {
 		cmdStr := string(cmd)
 		if trimmed == cmdStr {
