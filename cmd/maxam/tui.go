@@ -737,7 +737,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Add system message about auto follow-up
 				m.messages = append(m.messages, tuiMessage{
 					role:    "system",
-					content: fmt.Sprintf("[自動声かけ] %s → %s", pmAgent, followUpResult.Message),
+					content: fmt.Sprintf("[自動声かけ] %s", followUpResult.Message),
 				})
 
 				// Trigger PM to send follow-up message
@@ -1040,7 +1040,17 @@ func (m *tuiModel) buildTaskPrompt(agentName, taskContent string) string {
 func (m *tuiModel) buildMeiInterventionPrompt() string {
 	var sb strings.Builder
 
-	sb.WriteString("あなたはMei Chen、チームのPMです。\n\n")
+	// Get PM name from config
+	pmAgent := m.config.DefaultAgent
+	if pmAgent == "" {
+		pmAgent = "mei" // fallback
+	}
+	pmName := pmAgent
+	if agentConfig := m.config.GetAgentByInstanceKey(pmAgent); agentConfig != nil && agentConfig.FullName != "" {
+		pmName = agentConfig.FullName
+	}
+
+	sb.WriteString(fmt.Sprintf("あなたは%s、チームのPMです。\n\n", pmName))
 	sb.WriteString("チームの議論が長くなっています。以下を行ってください：\n\n")
 	sb.WriteString("1. これまでの議論を簡潔にまとめる\n")
 	sb.WriteString("2. 現在の状況と次のアクションを明確にする\n")
