@@ -12,16 +12,14 @@ import (
 
 // Member represents a team member
 type Member struct {
-	Name     string   // Short name (e.g., "yuki")
-	FullName string   // Full name (e.g., "Yuki Tanaka")
-	Role     string   // Role description
-	Aliases  []string // Alternative names (e.g., ["ゆき", "yuki-san"])
+	Name     string // Short name (e.g., "yuki")
+	FullName string // Full name (e.g., "Yuki Tanaka")
+	Role     string // Role description
 }
 
 // Members holds all team members
 type Members struct {
 	members map[string]*Member // key: lowercase short name
-	aliases map[string]string  // key: lowercase alias, value: canonical name
 }
 
 // NewMembers creates a Members instance from config and CLAUDE.md
@@ -29,7 +27,6 @@ type Members struct {
 func NewMembers(workDir string) *Members {
 	m := &Members{
 		members: make(map[string]*Member),
-		aliases: make(map[string]string),
 	}
 
 	// 1. Load from config with project overrides
@@ -38,17 +35,10 @@ func NewMembers(workDir string) *Members {
 		cfg = config.DefaultConfig()
 	}
 	for _, ac := range cfg.Agents {
-		member := &Member{
+		m.members[strings.ToLower(ac.Name)] = &Member{
 			Name:     ac.Name,
 			FullName: ac.FullName,
 			Role:     ac.Role,
-			Aliases:  ac.Aliases,
-		}
-		m.members[strings.ToLower(ac.Name)] = member
-
-		// Register aliases
-		for _, alias := range ac.Aliases {
-			m.aliases[strings.ToLower(alias)] = strings.ToLower(ac.Name)
 		}
 	}
 
@@ -81,21 +71,10 @@ func NewMembers(workDir string) *Members {
 	return m
 }
 
-// Get returns a member by name or alias (case-insensitive)
+// Get returns a member by name (case-insensitive)
 func (m *Members) Get(name string) (*Member, bool) {
-	lower := strings.ToLower(name)
-
-	// Try direct lookup first
-	if member, ok := m.members[lower]; ok {
-		return member, true
-	}
-
-	// Try alias lookup
-	if canonical, ok := m.aliases[lower]; ok {
-		return m.members[canonical], true
-	}
-
-	return nil, false
+	member, ok := m.members[strings.ToLower(name)]
+	return member, ok
 }
 
 // All returns all members
