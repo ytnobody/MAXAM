@@ -60,12 +60,13 @@ type Config struct {
 
 // AgentConfig represents an agent configuration
 type AgentConfig struct {
-	Name       string `yaml:"name"`
-	FullName   string `yaml:"full_name"`
-	Role       string `yaml:"role"`
-	Model      string `yaml:"model,omitempty"`       // opus, sonnet, haiku
-	Color      string `yaml:"color,omitempty"`       // hex color code (e.g., "#FF9933")
-	InstanceID string `yaml:"instance_id,omitempty"` // for multi-instance support (e.g., "1", "2")
+	Name       string   `yaml:"name"`
+	FullName   string   `yaml:"full_name"`
+	Role       string   `yaml:"role"`
+	Model      string   `yaml:"model,omitempty"`       // opus, sonnet, haiku
+	Color      string   `yaml:"color,omitempty"`       // hex color code (e.g., "#FF9933")
+	InstanceID string   `yaml:"instance_id,omitempty"` // for multi-instance support (e.g., "1", "2")
+	Aliases    []string `yaml:"aliases,omitempty"`     // alternative names (e.g., ["ゆき", "yuki-san"])
 }
 
 // TODO: Move to config.yaml when multi-instance feature is stabilized

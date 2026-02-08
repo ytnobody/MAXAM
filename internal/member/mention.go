@@ -6,11 +6,13 @@ import (
 
 // DetectMentions extracts all mentioned member names from text
 // Returns lowercase short names of mentioned members
+// Also resolves aliases to their canonical names
 func (m *Members) DetectMentions(text string) []string {
 	lower := strings.ToLower(text)
 	var mentioned []string
 	seen := make(map[string]bool)
 
+	// Check direct member names
 	for name := range m.members {
 		// Check @mention pattern
 		pattern := "@" + name
@@ -18,6 +20,17 @@ func (m *Members) DetectMentions(text string) []string {
 			if !seen[name] {
 				mentioned = append(mentioned, name)
 				seen[name] = true
+			}
+		}
+	}
+
+	// Check aliases
+	for alias, canonical := range m.aliases {
+		pattern := "@" + alias
+		if strings.Contains(lower, pattern) {
+			if !seen[canonical] {
+				mentioned = append(mentioned, canonical)
+				seen[canonical] = true
 			}
 		}
 	}

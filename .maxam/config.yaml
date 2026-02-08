@@ -4,18 +4,24 @@ agents:
     - name: mei
       full_name: mei
       role: PM + アーキテクト
+      aliases: ["めい"]
     - name: yuki
       full_name: yuki
       role: バックエンド + インフラ
+      aliases: ["ゆき"]
     - name: rin
       full_name: rin
       role: フロントエンド + バックエンド
+      aliases: ["りん"]
     - name: shiori
       full_name: shiori
       role: テスト + ドキュメント
+      aliases: ["しおり"]
     - name: priya
       full_name: priya
       role: レビュー + セキュリティ + QA
+      aliases: ["ぷりや"]
     - name: amara
       full_name: amara
       role: 分析 + 法的基礎知識
+      aliases: ["あまら"]
