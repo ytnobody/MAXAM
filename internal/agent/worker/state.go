@@ -13,6 +13,8 @@ const (
 	StateAvailable State = iota
 	// StateWorking means the agent is currently executing a task
 	StateWorking
+	// StateStopped means the agent is manually stopped and won't accept new tasks
+	StateStopped
 )
 
 func (s State) String() string {
@@ -21,6 +23,8 @@ func (s State) String() string {
 		return "available"
 	case StateWorking:
 		return "working"
+	case StateStopped:
+		return "stopped"
 	default:
 		return "unknown"
 	}
@@ -28,10 +32,11 @@ func (s State) String() string {
 
 // AgentState holds the current state of an agent
 type AgentState struct {
-	mu          sync.RWMutex
-	state       State
-	currentTask string    // Description of current task
-	startedAt   time.Time // When current task started
+	mu            sync.RWMutex
+	state         State
+	currentTask   string    // Description of current task
+	startedAt     time.Time // When current task started
+	stopRequested bool      // Flag to stop after current task completes
 }
 
 // NewAgentState creates a new agent state
@@ -56,6 +61,18 @@ func (s *AgentState) IsWorking() bool {
 // IsAvailable returns true if the agent is available
 func (s *AgentState) IsAvailable() bool {
 	return s.Get() == StateAvailable
+}
+
+// IsStopped returns true if the agent is stopped
+func (s *AgentState) IsStopped() bool {
+	return s.Get() == StateStopped
+}
+
+// IsStopRequested returns true if stop has been requested
+func (s *AgentState) IsStopRequested() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.stopRequested
 }
 
 // GetCurrentTask returns the current task description
@@ -84,13 +101,39 @@ func (s *AgentState) StartTask(description string) {
 	s.startedAt = time.Now()
 }
 
-// CompleteTask transitions to available state
+// CompleteTask transitions to available state or stopped state if stop was requested
 func (s *AgentState) CompleteTask() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.state = StateAvailable
+	if s.stopRequested {
+		s.state = StateStopped
+		s.stopRequested = false
+	} else {
+		s.state = StateAvailable
+	}
 	s.currentTask = ""
 	s.startedAt = time.Time{}
+}
+
+// RequestStop sets the stop flag - agent will stop after current task completes
+func (s *AgentState) RequestStop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state == StateWorking {
+		s.stopRequested = true
+	} else {
+		s.state = StateStopped
+	}
+}
+
+// Resume transitions from stopped to available state
+func (s *AgentState) Resume() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state == StateStopped {
+		s.state = StateAvailable
+		s.stopRequested = false
+	}
 }
 
 // GetStatus returns a human-readable status message
@@ -98,13 +141,22 @@ func (s *AgentState) GetStatus() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if s.state == StateAvailable {
+	switch s.state {
+	case StateAvailable:
 		return "待機中"
+	case StateStopped:
+		return "停止中"
+	case StateWorking:
+		duration := time.Since(s.startedAt).Round(time.Second)
+		status := "作業中"
+		if s.currentTask != "" {
+			status = s.currentTask
+		}
+		if s.stopRequested {
+			status += " (停止予定)"
+		}
+		return status + " (" + duration.String() + ")"
+	default:
+		return "不明"
 	}
-
-	duration := time.Since(s.startedAt).Round(time.Second)
-	if s.currentTask != "" {
-		return s.currentTask + " (" + duration.String() + ")"
-	}
-	return "作業中 (" + duration.String() + ")"
 }
