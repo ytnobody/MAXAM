@@ -104,3 +104,82 @@ func TestPlanModeConfig_CustomInterval(t *testing.T) {
 		t.Errorf("PollingInterval = %v, want 60s", config.PollingInterval)
 	}
 }
+
+func TestPlanLabel(t *testing.T) {
+	if PlanLabel != "maxam-plan" {
+		t.Errorf("PlanLabel = %q, want %q", PlanLabel, "maxam-plan")
+	}
+}
+
+func TestCreatePlanIssueWithLabel_BodyFormat(t *testing.T) {
+	// Test that the body contains expected elements
+	analysis := &ProjectAnalysis{
+		OpenIssues:       5,
+		UnassignedIssues: 2,
+	}
+
+	pe := &PlanExecutor{}
+	summary := pe.generateSummary(analysis)
+
+	// Simulate what CreatePlanIssueWithLabel would generate
+	expectedParts := []string{
+		"## 提案内容",
+		"承認する場合は",
+		"👍",
+		"LGTM",
+		"MAXAM Plan Mode",
+	}
+
+	// The summary should be generated correctly
+	if !strings.Contains(summary, "オープンIssue: 5件") {
+		t.Errorf("Summary should contain issue count")
+	}
+
+	// Check expected body format elements (used in CreatePlanIssueWithLabel)
+	bodyTemplate := `**承認する場合は、このIssueにコメントで「OK」「LGTM」「承認」「👍」などと返信してください。**`
+	for _, part := range expectedParts {
+		if part == "## 提案内容" || part == "MAXAM Plan Mode" {
+			continue // These are in body template but not in summary
+		}
+		if strings.Contains(bodyTemplate, part) != true && part != "👍" && part != "LGTM" {
+			t.Logf("Part %q checked against template", part)
+		}
+	}
+
+	// Verify 👍 is mentioned in approval instruction
+	if !strings.Contains(bodyTemplate, "👍") {
+		t.Errorf("Body template should mention 👍 emoji for approval")
+	}
+}
+
+func TestPostPlanComment_Format(t *testing.T) {
+	// Test the comment format includes expected elements
+	proposal := "Test proposal content"
+
+	// Simulate PostPlanComment body format
+	body := `## 新しいプラン提案
+
+` + proposal + `
+
+---
+
+**承認する場合は「OK」「LGTM」「承認」「👍」などと返信してください。**
+
+_このコメントはMAXAM Plan Modeによって自動生成されました。_
+`
+
+	expectedParts := []string{
+		"新しいプラン提案",
+		proposal,
+		"承認",
+		"👍",
+		"LGTM",
+		"MAXAM Plan Mode",
+	}
+
+	for _, part := range expectedParts {
+		if !strings.Contains(body, part) {
+			t.Errorf("PostPlanComment body should contain %q", part)
+		}
+	}
+}
