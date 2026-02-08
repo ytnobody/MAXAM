@@ -23,11 +23,13 @@ import (
 	"github.com/ytnobody/MAXAM/internal/contextmon"
 	"github.com/ytnobody/MAXAM/internal/errorwatch"
 	gh "github.com/ytnobody/MAXAM/internal/github"
+	"github.com/ytnobody/MAXAM/internal/heartbeat"
 	"github.com/ytnobody/MAXAM/internal/history"
 	"github.com/ytnobody/MAXAM/internal/logger"
 	"github.com/ytnobody/MAXAM/internal/member"
 	"github.com/ytnobody/MAXAM/internal/mention"
 	"github.com/ytnobody/MAXAM/internal/mode"
+	"github.com/ytnobody/MAXAM/internal/recovery"
 	"github.com/ytnobody/MAXAM/internal/router"
 	"github.com/ytnobody/MAXAM/internal/taskboard"
 	"github.com/ytnobody/MAXAM/internal/tui/tasklist"
@@ -216,6 +218,11 @@ type tuiModel struct {
 	// Context size monitoring
 	contextMonitor *contextmon.Monitor
 	contextWarning string // Current context size warning message
+
+	// Heartbeat monitoring and recovery
+	heartbeatMonitor  *heartbeat.Monitor
+	recoveryHandler   *recovery.Handler
+	heartbeatMsgQueue chan heartbeatEventMsg // Queue for heartbeat events to process in Update
 }
 
 type agentResponseMsg struct {
@@ -339,6 +346,104 @@ func initialTuiModel(workDir string) tuiModel {
 	// Setup context monitor
 	ctxMonitor := contextmon.NewMonitor(contextmon.DefaultConfig())
 
+	// Setup heartbeat monitoring and recovery
+	// Create message queue for heartbeat events (buffered to avoid blocking)
+	heartbeatMsgQueue := make(chan heartbeatEventMsg, 10)
+
+	// PingFunc: Check worker health without LLM calls
+	// A worker is considered unresponsive if it's been working on a task for too long
+	pingFn := func(ctx context.Context, workerName string) error {
+		w, ok := workerPool.Get(workerName)
+		if !ok {
+			return fmt.Errorf("worker not found: %s", workerName)
+		}
+		// Stopped workers are intentionally stopped, not unresponsive
+		if w.IsStopped() {
+			return nil
+		}
+		// Check if task has been running too long (10 minutes threshold)
+		if w.State().IsWorking() {
+			duration := w.State().GetTaskDuration()
+			if duration > 10*time.Minute {
+				return fmt.Errorf("task running too long: %v", duration)
+			}
+		}
+		return nil
+	}
+
+	// Heartbeat config with shorter intervals for responsiveness
+	hbConfig := heartbeat.Config{
+		Interval:   30 * time.Second, // Check every 30 seconds
+		Timeout:    5 * time.Second,  // Ping timeout (not used for state checks)
+		MaxRetries: 3,                // 3 failures before marked as dead
+	}
+	hbMonitor := heartbeat.NewMonitor(hbConfig, pingFn)
+
+	// Register all workers to monitor
+	for _, name := range workerPool.All() {
+		hbMonitor.RegisterWorker(name)
+	}
+
+	// RestartFunc: Resume a stopped worker
+	restartFn := func(ctx context.Context, workerName string) error {
+		w, ok := workerPool.Get(workerName)
+		if !ok {
+			return fmt.Errorf("worker not found: %s", workerName)
+		}
+		w.Resume()
+		return nil
+	}
+
+	// NotifyFunc: Queue a message to be processed in the Update loop
+	notifyFn := func(ctx context.Context, target, message string) error {
+		select {
+		case heartbeatMsgQueue <- heartbeatEventMsg{
+			workerName: target,
+			message:    message,
+		}:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// Queue full, drop message (best effort)
+			return nil
+		}
+	}
+
+	// Recovery config
+	recConfig := recovery.Config{
+		MaxRetries:    3,
+		RetryDelay:    5 * time.Second,
+		NotifyTimeout: 10 * time.Second,
+		PMAgent:       cfg.DefaultAgent,
+		OwnerChannel:  "owner",
+	}
+	if recConfig.PMAgent == "" {
+		recConfig.PMAgent = "mei" // fallback
+	}
+	recHandler := recovery.NewHandler(recConfig, restartFn, notifyFn)
+
+	// Set unresponsive callback to trigger recovery
+	hbMonitor.SetUnresponsiveCallback(func(workerName string, failCount int) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// Try recovery
+		recovered := recHandler.HandleUnresponsive(ctx, workerName, failCount)
+
+		// Queue event for TUI update
+		select {
+		case heartbeatMsgQueue <- heartbeatEventMsg{
+			workerName: workerName,
+			failCount:  failCount,
+			recovered:  recovered,
+			message:    fmt.Sprintf("エージェント %s が無応答 (失敗回数: %d)", workerName, failCount),
+		}:
+		default:
+			// Queue full, drop
+		}
+	})
+
 	return tuiModel{
 		agents:              agents,
 		members:             members,
@@ -368,6 +473,9 @@ func initialTuiModel(workDir string) tuiModel {
 		planExecutor:        planExecutor,
 		approvalWatcher:     approvalWatcher,
 		contextMonitor:      ctxMonitor,
+		heartbeatMonitor:    hbMonitor,
+		recoveryHandler:     recHandler,
+		heartbeatMsgQueue:   heartbeatMsgQueue,
 	}
 }
 
@@ -412,10 +520,26 @@ type issueListMsg struct {
 	err    error
 }
 
+// heartbeatEventMsg is sent when a worker becomes unresponsive or recovers
+type heartbeatEventMsg struct {
+	workerName string
+	failCount  int
+	recovered  bool
+	message    string
+}
+
+// heartbeatTickMsg triggers periodic heartbeat check processing
+type heartbeatTickMsg struct{}
+
 func (m tuiModel) Init() tea.Cmd {
 	// Start worker pool
 	if m.workerPool != nil {
 		m.workerPool.StartAll()
+	}
+
+	// Start heartbeat monitoring
+	if m.heartbeatMonitor != nil {
+		m.heartbeatMonitor.Start()
 	}
 
 	cmds := []tea.Cmd{textinput.Blink, tea.EnterAltScreen, m.tickAnalysis()}
@@ -428,6 +552,10 @@ func (m tuiModel) Init() tea.Cmd {
 	if m.ccusageClient != nil {
 		cmds = append(cmds, m.fetchCcusage(), m.tickCcusage())
 	}
+	// Start heartbeat event processing
+	if m.heartbeatMsgQueue != nil {
+		cmds = append(cmds, m.processHeartbeatEvents())
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -436,6 +564,29 @@ func (m tuiModel) tickCcusage() tea.Cmd {
 	return tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
 		return ccusageTickMsg{}
 	})
+}
+
+// processHeartbeatEvents processes queued heartbeat events
+func (m tuiModel) processHeartbeatEvents() tea.Cmd {
+	return func() tea.Msg {
+		if m.heartbeatMsgQueue == nil {
+			return nil
+		}
+		// Non-blocking read from queue
+		select {
+		case event := <-m.heartbeatMsgQueue:
+			return event
+		default:
+			// No events, wait a bit and check again
+			time.Sleep(100 * time.Millisecond)
+			select {
+			case event := <-m.heartbeatMsgQueue:
+				return event
+			default:
+				return heartbeatTickMsg{}
+			}
+		}
+	}
 }
 
 // fetchCcusage fetches the current cost from ccusage
@@ -502,6 +653,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.workerPool != nil {
 				m.workerPool.StopAll()
+			}
+			if m.heartbeatMonitor != nil {
+				m.heartbeatMonitor.Stop()
 			}
 			return m, tea.Quit
 
@@ -837,6 +991,36 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 		m.updateViewport()
 		return m, nil
+
+	case heartbeatEventMsg:
+		// Handle heartbeat events (worker unresponsive/recovered)
+		var icon string
+		if msg.recovered {
+			icon = "✅"
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: fmt.Sprintf("%s エージェント %s が復帰しました", icon, msg.workerName),
+			})
+		} else if msg.failCount > 0 {
+			icon = "⚠️"
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: fmt.Sprintf("%s %s", icon, msg.message),
+			})
+		} else if msg.message != "" {
+			// Notification message (PM/owner notification)
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: fmt.Sprintf("📢 %s", msg.message),
+			})
+		}
+		m.updateViewport()
+		// Continue processing events
+		return m, m.processHeartbeatEvents()
+
+	case heartbeatTickMsg:
+		// Periodic tick - just keep polling for events
+		return m, m.processHeartbeatEvents()
 
 	case agentResponseMsg:
 		// エージェントの処理状態をクリア
