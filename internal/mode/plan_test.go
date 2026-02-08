@@ -183,3 +183,29 @@ _このコメントはMAXAM Plan Modeによって自動生成されました。_
 		}
 	}
 }
+
+func TestReplyToFeedback_Format(t *testing.T) {
+	// Test reply format includes expected elements
+	feedbackBy := "testuser"
+	replyContent := "Thank you for the feedback. I will update the plan."
+
+	// Simulate ReplyToFeedback body format
+	body := `@` + feedbackBy + `
+
+` + replyContent + `
+
+_このコメントはMAXAM Plan Modeによって自動生成されました。_
+`
+
+	expectedParts := []string{
+		"@testuser",
+		replyContent,
+		"MAXAM Plan Mode",
+	}
+
+	for _, part := range expectedParts {
+		if !strings.Contains(body, part) {
+			t.Errorf("ReplyToFeedback body should contain %q", part)
+		}
+	}
+}

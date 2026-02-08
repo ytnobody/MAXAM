@@ -324,3 +324,37 @@ _このコメントはMAXAM Plan Modeによって自動生成されました。_
 
 	return pe.ghClient.CommentIssue(ctx, issueNumber, body)
 }
+
+// UpdatePlanIssue updates the body of a plan issue
+func (pe *PlanExecutor) UpdatePlanIssue(ctx context.Context, issueNumber int, newBody string) error {
+	_, err := pe.ghClient.EditIssue(ctx, issueNumber, nil, &newBody)
+	if err != nil {
+		return fmt.Errorf("update plan issue: %w", err)
+	}
+	return nil
+}
+
+// AppendToPlanIssue appends content to the plan issue body
+func (pe *PlanExecutor) AppendToPlanIssue(ctx context.Context, issueNumber int, appendContent string) error {
+	issue, err := pe.ghClient.GetIssue(ctx, issueNumber)
+	if err != nil {
+		return fmt.Errorf("get issue: %w", err)
+	}
+
+	currentBody := issue.GetBody()
+	newBody := currentBody + "\n\n" + appendContent
+
+	return pe.UpdatePlanIssue(ctx, issueNumber, newBody)
+}
+
+// ReplyToFeedback posts a reply comment to feedback
+func (pe *PlanExecutor) ReplyToFeedback(ctx context.Context, issueNumber int, feedbackBy, replyContent string) error {
+	body := fmt.Sprintf(`@%s
+
+%s
+
+_このコメントはMAXAM Plan Modeによって自動生成されました。_
+`, feedbackBy, replyContent)
+
+	return pe.ghClient.CommentIssue(ctx, issueNumber, body)
+}

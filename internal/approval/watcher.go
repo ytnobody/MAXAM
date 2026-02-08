@@ -186,3 +186,8 @@ func (w *Watcher) Start(ctx context.Context) <-chan ApprovalEvent {
 func (w *Watcher) Interval() time.Duration {
 	return w.interval
 }
+
+// Client returns the underlying IssueCommentFetcher
+func (w *Watcher) Client() IssueCommentFetcher {
+	return w.client
+}
