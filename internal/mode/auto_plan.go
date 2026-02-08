@@ -17,10 +17,11 @@ import (
 type AutoPlanHandler struct {
 	mu sync.RWMutex
 
-	modeManager *Manager
-	watcher     *approval.Watcher
-	poster      *approval.QuestionPoster
-	runner      *auto.Runner
+	modeManager     *Manager
+	watcher         *approval.Watcher
+	feedbackWatcher *approval.FeedbackWatcher
+	poster          *approval.QuestionPoster
+	runner          *auto.Runner
 
 	// current state
 	planIssueNumber int
@@ -29,6 +30,7 @@ type AutoPlanHandler struct {
 
 	// callbacks
 	onApproved   func(issueNumber int, approvedBy string)
+	onFeedback   func(issueNumber int, feedback *approval.FeedbackComment)
 	onTransition func(from, to config.Mode)
 }
 
@@ -74,12 +76,19 @@ func NewAutoPlanHandler(
 	watcher *approval.Watcher,
 	poster *approval.QuestionPoster,
 ) *AutoPlanHandler {
+	// Create feedback watcher using the same client as approval watcher
+	var feedbackWatcher *approval.FeedbackWatcher
+	if watcher != nil {
+		feedbackWatcher = approval.NewFeedbackWatcher(watcher.Client())
+	}
+
 	return &AutoPlanHandler{
-		modeManager: modeManager,
-		watcher:     watcher,
-		poster:      poster,
-		runner:      auto.NewRunner(&noopExecutor{}, auto.DefaultConfig()),
-		state:       StateIdle,
+		modeManager:     modeManager,
+		watcher:         watcher,
+		feedbackWatcher: feedbackWatcher,
+		poster:          poster,
+		runner:          auto.NewRunner(&noopExecutor{}, auto.DefaultConfig()),
+		state:           StateIdle,
 	}
 }
 
@@ -111,6 +120,13 @@ func (h *AutoPlanHandler) SetOnTransition(fn func(from, to config.Mode)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.onTransition = fn
+}
+
+// SetOnFeedback sets the callback for when feedback is received
+func (h *AutoPlanHandler) SetOnFeedback(fn func(issueNumber int, feedback *approval.FeedbackComment)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.onFeedback = fn
 }
 
 // State returns the current state
@@ -157,6 +173,11 @@ func (h *AutoPlanHandler) StartPlanWorkflow(ctx context.Context, issueNumber int
 
 	// Start watching for approval
 	h.watcher.Watch(issueNumber)
+
+	// Start watching for feedback
+	if h.feedbackWatcher != nil {
+		h.feedbackWatcher.Watch(issueNumber)
+	}
 
 	// Update state
 	h.planIssueNumber = issueNumber
@@ -241,6 +262,9 @@ func (h *AutoPlanHandler) Stop() {
 
 	if h.planIssueNumber != 0 {
 		h.watcher.Unwatch(h.planIssueNumber)
+		if h.feedbackWatcher != nil {
+			h.feedbackWatcher.Unwatch(h.planIssueNumber)
+		}
 	}
 
 	h.modeManager.Stop()
@@ -311,4 +335,105 @@ func (h *AutoPlanHandler) ReportBlocker(ctx context.Context, blocker, agentName 
 	}
 
 	return h.poster.PostBlockerNotification(ctx, issueNumber, blocker, agentName)
+}
+
+// FeedbackNotification represents a notification when feedback is received
+type FeedbackNotification struct {
+	IssueNumber int
+	Feedback    *approval.FeedbackComment
+}
+
+// StartFeedbackPolling starts the polling loop for feedback
+// Returns a channel that receives feedback events
+func (h *AutoPlanHandler) StartFeedbackPolling(ctx context.Context) <-chan FeedbackNotification {
+	notifyCh := make(chan FeedbackNotification, 10)
+
+	if h.feedbackWatcher == nil {
+		close(notifyCh)
+		return notifyCh
+	}
+
+	go func() {
+		defer close(notifyCh)
+
+		eventCh := h.feedbackWatcher.Start(ctx)
+		for event := range eventCh {
+			h.mu.RLock()
+			issueNumber := h.planIssueNumber
+			onFeedback := h.onFeedback
+			h.mu.RUnlock()
+
+			if event.IssueNumber != issueNumber {
+				continue
+			}
+
+			// Handle approval separately - let the approval watcher handle it
+			if event.Comment.Type == approval.CommentTypeApproval {
+				continue
+			}
+
+			// Invoke callback
+			if onFeedback != nil {
+				onFeedback(event.IssueNumber, event.Comment)
+			}
+
+			select {
+			case notifyCh <- FeedbackNotification{
+				IssueNumber: event.IssueNumber,
+				Feedback:    event.Comment,
+			}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return notifyCh
+}
+
+// CheckFeedback checks for feedback on the current plan once
+func (h *AutoPlanHandler) CheckFeedback(ctx context.Context) ([]FeedbackNotification, error) {
+	if h.feedbackWatcher == nil {
+		return nil, nil
+	}
+
+	h.mu.RLock()
+	issueNumber := h.planIssueNumber
+	h.mu.RUnlock()
+
+	events, err := h.feedbackWatcher.CheckOnce(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var notifications []FeedbackNotification
+	for _, event := range events {
+		if event.IssueNumber != issueNumber {
+			continue
+		}
+		// Skip approval comments
+		if event.Comment.Type == approval.CommentTypeApproval {
+			continue
+		}
+		notifications = append(notifications, FeedbackNotification{
+			IssueNumber: event.IssueNumber,
+			Feedback:    event.Comment,
+		})
+	}
+
+	return notifications, nil
+}
+
+// WatchFeedback starts watching the plan issue for feedback
+func (h *AutoPlanHandler) WatchFeedback(issueNumber int) {
+	if h.feedbackWatcher != nil {
+		h.feedbackWatcher.Watch(issueNumber)
+	}
+}
+
+// UnwatchFeedback stops watching the plan issue for feedback
+func (h *AutoPlanHandler) UnwatchFeedback(issueNumber int) {
+	if h.feedbackWatcher != nil {
+		h.feedbackWatcher.Unwatch(issueNumber)
+	}
 }

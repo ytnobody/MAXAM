@@ -158,6 +158,23 @@ func (c *Client) CloseIssue(ctx context.Context, number int) error {
 	return nil
 }
 
+// EditIssue updates an issue's title and/or body
+func (c *Client) EditIssue(ctx context.Context, number int, title, body *string) (*github.Issue, error) {
+	req := &github.IssueRequest{}
+	if title != nil {
+		req.Title = title
+	}
+	if body != nil {
+		req.Body = body
+	}
+
+	issue, _, err := c.client.Issues.Edit(ctx, c.owner, c.repo, number, req)
+	if err != nil {
+		return nil, fmt.Errorf("edit issue: %w", err)
+	}
+	return issue, nil
+}
+
 // ListIssueComments lists comments on an issue
 func (c *Client) ListIssueComments(ctx context.Context, number int) ([]*github.IssueComment, error) {
 	opts := &github.IssueListCommentsOptions{
