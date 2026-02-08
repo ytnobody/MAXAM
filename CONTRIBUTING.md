@@ -152,7 +152,7 @@ agents:
 
 エージェントのペルソナをカスタマイズする場合:
 
-1. **`agents/{name}/CLAUDE.md`** - エージェントのペルソナファイルを作成
+1. **`internal/config/agents/{name}/CLAUDE.md`** - エージェントのペルソナファイルを作成
    - 既存エージェントのファイルを参考に
    - 性格、役割、行動規範を定義
 
@@ -166,8 +166,8 @@ agents:
 - チームメンバーは設定ファイル（`.maxam/config.yaml`）で管理
 - コードへのハードコードは禁止（設定ファイルで管理）
 - `FullName` は必須。省略すると `Name` がそのまま使われる
-- ペルソナファイルは `agents/` 配下に配置
-- ビルド時に `agents/` は `~/.maxam/agents/` へ自動展開される
+- ペルソナファイルは `internal/config/agents/` 配下に配置（`go:embed` 制約）
+- ビルド時に埋め込まれ、`~/.maxam/agents/` へ自動展開される
 
 ## 質問がある場合
 
