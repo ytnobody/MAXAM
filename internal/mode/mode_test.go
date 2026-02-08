@@ -76,12 +76,47 @@ func TestModeTransitions(t *testing.T) {
 		}
 	})
 
-	t.Run("direct auto mode from interactive fails", func(t *testing.T) {
+	t.Run("direct auto mode from interactive fails (via EnterAutoMode)", func(t *testing.T) {
 		m := NewManager(config.ModeInteractive)
 
 		ctx := &PlanContext{Approved: true}
 		if err := m.EnterAutoMode(ctx); err == nil {
 			t.Error("EnterAutoMode() expected error when not in plan mode")
+		}
+	})
+
+	t.Run("direct auto mode from interactive succeeds (via EnterAutoModeWithoutPlan)", func(t *testing.T) {
+		m := NewManager(config.ModeInteractive)
+
+		if err := m.EnterAutoModeWithoutPlan(); err != nil {
+			t.Errorf("EnterAutoModeWithoutPlan() unexpected error: %v", err)
+		}
+
+		if !m.IsAuto() {
+			t.Error("expected to be in auto mode")
+		}
+
+		// Plan context should be nil when entering without plan
+		if ctx := m.GetPlanContext(); ctx != nil {
+			t.Error("expected plan context to be nil when entering auto mode without plan")
+		}
+	})
+
+	t.Run("EnterAutoModeWithoutPlan fails from plan mode", func(t *testing.T) {
+		m := NewManager(config.ModeInteractive)
+		m.EnterPlanMode()
+
+		if err := m.EnterAutoModeWithoutPlan(); err == nil {
+			t.Error("EnterAutoModeWithoutPlan() expected error when in plan mode")
+		}
+	})
+
+	t.Run("EnterAutoModeWithoutPlan fails from auto mode", func(t *testing.T) {
+		m := NewManager(config.ModeInteractive)
+		m.EnterAutoModeWithoutPlan()
+
+		if err := m.EnterAutoModeWithoutPlan(); err == nil {
+			t.Error("EnterAutoModeWithoutPlan() expected error when already in auto mode")
 		}
 	})
 

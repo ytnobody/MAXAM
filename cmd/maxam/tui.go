@@ -1864,6 +1864,22 @@ func (m *tuiModel) handleModeCommand(result mode.ParseResult) (tea.Model, tea.Cm
 		// Start plan workflow asynchronously
 		return m, m.startPlanWorkflow()
 
+	case mode.CommandAuto:
+		// Enter auto mode directly (without plan)
+		if err := m.modeManager.EnterAutoModeWithoutPlan(); err != nil {
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: fmt.Sprintf("⚠️ %s", err.Error()),
+			})
+			m.updateViewport()
+			return m, nil
+		}
+
+		m.messages = append(m.messages, tuiMessage{
+			role:    "system",
+			content: "🚀 Autoモードに切り替えました。プランなしで自動実行モードに入ります。\n/stop でInteractiveモードに戻れます。",
+		})
+
 	case mode.CommandStop:
 		// Stop approval watching if active
 		if m.approvalWatcher != nil && m.currentPlanIssue > 0 {

@@ -41,6 +41,20 @@ func TestParse(t *testing.T) {
 			wantArgs:    "",
 		},
 		{
+			name:        "/auto command",
+			input:       "/auto",
+			wantCommand: true,
+			wantCmd:     CommandAuto,
+			wantArgs:    "",
+		},
+		{
+			name:        "/auto with args",
+			input:       "/auto yuki",
+			wantCommand: true,
+			wantCmd:     CommandAuto,
+			wantArgs:    "yuki",
+		},
+		{
 			name:        "regular message",
 			input:       "hello team",
 			wantCommand: false,

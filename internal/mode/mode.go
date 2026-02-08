@@ -88,6 +88,21 @@ func (m *Manager) EnterAutoMode(ctx *PlanContext) error {
 	return nil
 }
 
+// EnterAutoModeWithoutPlan transitions to auto mode directly from interactive mode
+// This bypasses the plan mode and allows immediate auto execution
+func (m *Manager) EnterAutoModeWithoutPlan() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.currentMode != config.ModeInteractive {
+		return fmt.Errorf("can only enter auto mode directly from interactive mode (current: %s)", m.currentMode)
+	}
+
+	m.currentMode = config.ModeAuto
+	m.planContext = nil // No plan context when entering directly
+	return nil
+}
+
 // Stop returns to interactive mode from any mode
 func (m *Manager) Stop() {
 	m.mu.Lock()
