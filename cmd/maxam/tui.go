@@ -104,6 +104,19 @@ var (
 	systemStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFD700")).
 			Bold(true)
+
+	// Mode indicator styles
+	modeInteractiveStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				Bold(false)
+
+	modePlanStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#00BFFF")).
+			Bold(true)
+
+	modeAutoStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FF6347")).
+			Bold(true)
 )
 
 type tuiMessage struct {
@@ -1151,8 +1164,9 @@ func (m tuiModel) View() string {
 			}
 			statusContent = statusStyle.Render(fmt.Sprintf(" %s 処理中... ", strings.Join(names, ", ")))
 		} else {
-			// Build status with optional cost display
-			statusText := fmt.Sprintf(" 履歴:%d ↑↓:履歴 PgUp/Dn:スクロール ", len(m.inputHist))
+			// Build status with mode indicator and optional cost display
+			modeIndicator := m.renderModeIndicator()
+			statusText := fmt.Sprintf(" %s 履歴:%d ↑↓:履歴 PgUp/Dn:スクロール ", modeIndicator, len(m.inputHist))
 			if m.ccusageClient != nil && m.todayCost > 0 {
 				statusText += fmt.Sprintf("| %s today ", ccusage.FormatCost(m.todayCost))
 			}
@@ -1621,6 +1635,23 @@ func (m *tuiModel) fetchIssueList() tea.Cmd {
 		}
 
 		return issueListMsg{issues: result}
+	}
+}
+
+// renderModeIndicator はモード表示用の文字列を返す
+func (m *tuiModel) renderModeIndicator() string {
+	if m.modeManager == nil {
+		return modeInteractiveStyle.Render("[Interactive]")
+	}
+
+	currentMode := m.modeManager.Current()
+	switch currentMode {
+	case config.ModePlan:
+		return modePlanStyle.Render("[Plan]")
+	case config.ModeAuto:
+		return modeAutoStyle.Render("[Auto]")
+	default:
+		return modeInteractiveStyle.Render("[Interactive]")
 	}
 }
 

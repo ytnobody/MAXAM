@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ytnobody/MAXAM/internal/config"
+	"github.com/ytnobody/MAXAM/internal/mode"
 )
 
 func TestIsNoIssueResponse(t *testing.T) {
@@ -319,11 +320,11 @@ func TestSelectHistoryMessages(t *testing.T) {
 	// モデル作成（簡易版）
 	m := &tuiModel{
 		messages: []tuiMessage{
-			{role: "user", content: "おはよう"},                        // 低優先 (雑談)
-			{role: "mei", content: "おはようございます"},                // 低優先 (雑談)
+			{role: "user", content: "おはよう"},     // 低優先 (雑談)
+			{role: "mei", content: "おはようございます"}, // 低優先 (雑談)
 			{role: "user", content: "トークン消費を減らしたい。調整案ある？"},
 			{role: "yuki", content: "調整案として4つ提案する。1. 15→8に減らす..."},
-			{role: "user", content: "うん"},                           // 低優先 (短い)
+			{role: "user", content: "うん"}, // 低優先 (短い)
 			{role: "user", content: "これは全部やろう。実装よろしく"},
 			{role: "yuki", content: "了解。4つ全部やる。作業入る。"},
 		},
@@ -353,10 +354,10 @@ func TestSelectHistoryMessages(t *testing.T) {
 
 func TestAnalysisMinMessagesThreshold(t *testing.T) {
 	tests := []struct {
-		name              string
-		messageCount      int
-		minMessages       int
-		expectAnalysis    bool
+		name           string
+		messageCount   int
+		minMessages    int
+		expectAnalysis bool
 	}{
 		{
 			name:           "閾値以上で分析実行",
@@ -532,9 +533,9 @@ func TestIssueListConstants(t *testing.T) {
 
 func TestMentionWarningChainTrigger(t *testing.T) {
 	tests := []struct {
-		name           string
-		warningCount   int
-		expectRetry    bool
+		name         string
+		warningCount int
+		expectRetry  bool
 	}{
 		{
 			name:         "初回警告 - リトライする",
@@ -589,10 +590,10 @@ func TestMentionWarningCountReset(t *testing.T) {
 
 func TestTaskPrefixParsing(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		isTask   bool
-		content  string
+		name    string
+		input   string
+		isTask  bool
+		content string
 	}{
 		{
 			name:    "/task で始まる入力",
@@ -646,6 +647,71 @@ func TestTaskPrefixParsing(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRenderModeIndicator(t *testing.T) {
+	tests := []struct {
+		name        string
+		defaultMode config.Mode
+		setupFunc   func(mm *mode.Manager) // モード設定用のセットアップ関数
+		contains    string                 // 表示に含まれるべき文字列
+	}{
+		{
+			name:        "Interactiveモード（デフォルト）",
+			defaultMode: config.ModeInteractive,
+			setupFunc:   nil,
+			contains:    "Interactive",
+		},
+		{
+			name:        "Planモード",
+			defaultMode: config.ModeInteractive,
+			setupFunc: func(mm *mode.Manager) {
+				mm.EnterPlanMode()
+			},
+			contains: "Plan",
+		},
+		{
+			name:        "Autoモード",
+			defaultMode: config.ModeInteractive,
+			setupFunc: func(mm *mode.Manager) {
+				mm.EnterPlanMode()
+				mm.SetPlanApproved(true)
+				mm.EnterAutoMode(mm.GetPlanContext())
+			},
+			contains: "Auto",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// mode.Managerを作成
+			mm := mode.NewManager(tt.defaultMode)
+			if tt.setupFunc != nil {
+				tt.setupFunc(mm)
+			}
+
+			m := &tuiModel{
+				modeManager: mm,
+			}
+
+			got := m.renderModeIndicator()
+			if !strings.Contains(got, tt.contains) {
+				t.Errorf("renderModeIndicator() = %q, want to contain %q", got, tt.contains)
+			}
+		})
+	}
+}
+
+func TestRenderModeIndicatorNilManager(t *testing.T) {
+	// modeManagerがnilの場合はInteractiveを表示
+	m := &tuiModel{
+		modeManager: nil,
+	}
+
+	got := m.renderModeIndicator()
+	if !strings.Contains(got, "Interactive") {
+		t.Errorf("renderModeIndicator() with nil manager = %q, want to contain 'Interactive'", got)
 	}
 }
 
