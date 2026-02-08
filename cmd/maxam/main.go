@@ -44,6 +44,8 @@ func main() {
 		runAnalyze()
 	case "status":
 		showStatus()
+	case "watch":
+		runWatch()
 	case "help":
 		printUsage()
 	default:
@@ -76,6 +78,7 @@ Commands:
   review <description> Run a full review cycle (Yuki → Priya)
   ask <agent> <prompt> Ask a specific agent a question
   analyze              Run Amara's weekly analysis
+  watch <owner/repo>   Watch repository for new Issues/PRs
   status               Show team status
   help                 Show this help
 
@@ -95,7 +98,9 @@ Examples:
   maxam task status 1 in_progress                 # Change task #1 to in_progress
   maxam task "Add a login button to the header"  # Delegate to Yuki
   maxam review "Create unit tests for the auth module"
-  maxam ask yuki "How would you implement caching here?"`)
+  maxam ask yuki "How would you implement caching here?"
+  maxam watch ytnobody/MAXAM              # Watch for new Issues/PRs
+  maxam watch ytnobody/MAXAM --interval 30s`)
 }
 
 func getWorkDir() string {
@@ -106,7 +111,6 @@ func getWorkDir() string {
 	}
 	return dir
 }
-
 
 func runReview() {
 	if len(os.Args) < 3 {
