@@ -44,19 +44,27 @@ func IsValidMode(m Mode) bool {
 	return false
 }
 
+// HeartbeatConfig holds heartbeat monitoring settings
+type HeartbeatConfig struct {
+	Interval   string `yaml:"interval,omitempty"`    // Monitoring interval (e.g., "10s")
+	Timeout    string `yaml:"timeout,omitempty"`     // Response timeout (e.g., "30s")
+	MaxRetries int    `yaml:"max_retries,omitempty"` // Max restart attempts
+}
+
 // Config represents the MAXAM configuration
 type Config struct {
-	Version               string        `yaml:"version"`
-	TeamName              string        `yaml:"team_name,omitempty"`
-	DefaultAgent          string        `yaml:"default_agent,omitempty"`
-	DefaultMode           Mode          `yaml:"default_mode,omitempty"`
-	Agents                []AgentConfig `yaml:"agents"`
-	AnalysisMinMessages   int           `yaml:"analysis_min_messages,omitempty"`
-	ContextMode           ContextMode   `yaml:"context_mode,omitempty"`
-	YOLOMode              bool          `yaml:"yolo_mode,omitempty"`
-	WorkersPerAgent       int           `yaml:"workers_per_agent,omitempty"`
-	MentionCheckerEnabled *bool         `yaml:"mention_checker_enabled,omitempty"`
-	LogLevel              string        `yaml:"log_level,omitempty"`
+	Version               string           `yaml:"version"`
+	TeamName              string           `yaml:"team_name,omitempty"`
+	DefaultAgent          string           `yaml:"default_agent,omitempty"`
+	DefaultMode           Mode             `yaml:"default_mode,omitempty"`
+	Agents                []AgentConfig    `yaml:"agents"`
+	AnalysisMinMessages   int              `yaml:"analysis_min_messages,omitempty"`
+	ContextMode           ContextMode      `yaml:"context_mode,omitempty"`
+	YOLOMode              bool             `yaml:"yolo_mode,omitempty"`
+	WorkersPerAgent       int              `yaml:"workers_per_agent,omitempty"`
+	MentionCheckerEnabled *bool            `yaml:"mention_checker_enabled,omitempty"`
+	LogLevel              string           `yaml:"log_level,omitempty"`
+	Heartbeat             *HeartbeatConfig `yaml:"heartbeat,omitempty"`
 }
 
 // AgentConfig represents an agent configuration
@@ -456,4 +464,38 @@ func (c *Config) GetLogLevel() string {
 		return "info"
 	}
 	return c.LogLevel
+}
+
+// DefaultHeartbeatInterval is the default heartbeat monitoring interval
+const DefaultHeartbeatInterval = "10s"
+
+// DefaultHeartbeatTimeout is the default heartbeat response timeout
+const DefaultHeartbeatTimeout = "30s"
+
+// DefaultHeartbeatMaxRetries is the default max restart attempts
+const DefaultHeartbeatMaxRetries = 3
+
+// GetHeartbeatConfig returns the heartbeat configuration with defaults
+func (c *Config) GetHeartbeatConfig() HeartbeatConfig {
+	if c.Heartbeat == nil {
+		return HeartbeatConfig{
+			Interval:   DefaultHeartbeatInterval,
+			Timeout:    DefaultHeartbeatTimeout,
+			MaxRetries: DefaultHeartbeatMaxRetries,
+		}
+	}
+
+	cfg := *c.Heartbeat
+
+	if cfg.Interval == "" {
+		cfg.Interval = DefaultHeartbeatInterval
+	}
+	if cfg.Timeout == "" {
+		cfg.Timeout = DefaultHeartbeatTimeout
+	}
+	if cfg.MaxRetries <= 0 {
+		cfg.MaxRetries = DefaultHeartbeatMaxRetries
+	}
+
+	return cfg
 }
