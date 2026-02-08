@@ -220,6 +220,17 @@ func (w *Worker) taskLoop() {
 
 // handleTask processes a single task request
 func (w *Worker) handleTask(req TaskRequest) {
+	// If already working on another task, return status message
+	if w.state.IsWorking() {
+		status := w.state.GetStatus()
+		req.Response <- TaskResponse{
+			Content: fmt.Sprintf("今%sの作業中。完了したら対応する。", status),
+			Elapsed: 0,
+			Err:     nil,
+		}
+		return
+	}
+
 	// Mark as working
 	w.state.StartTask(req.Description)
 	defer w.state.CompleteTask()

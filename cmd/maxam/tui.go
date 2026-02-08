@@ -97,9 +97,17 @@ var (
 			Foreground(lipgloss.Color("241")).
 			Padding(0, 1)
 
-	// フッター行全体の背景色（控えめなダークグレー）
+	// フッター行全体の背景色（控えめなダークグレー）- Interactiveモード用
 	footerStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("236"))
+
+	// Planモード用フッター背景色（青系）
+	footerPlanStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#1E3A5F"))
+
+	// Autoモード用フッター背景色（緑系）
+	footerAutoStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#1E4D2B"))
 
 	// System message style for mention warnings
 	systemStyle = lipgloss.NewStyle().
@@ -534,16 +542,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateViewport()
 
 			// /task プレフィックスで分岐: SendTask or SendChat
+			// 処理中でもWorkerに送信し、作業中ならWorkerが即座にステータスを返す
 			if strings.HasPrefix(input, taskPrefix) {
 				// /task 〇〇 → 実装指示として SendTask を使う
 				taskContent := strings.TrimPrefix(input, taskPrefix)
 				targetAgents := m.detectAgents(taskContent)
 				var cmds []tea.Cmd
 				for _, agentName := range targetAgents {
-					if !m.processingAgents[agentName] {
-						m.processingAgents[agentName] = true
-						cmds = append(cmds, m.runTaskAsync(taskContent, agentName))
-					}
+					m.processingAgents[agentName] = true
+					cmds = append(cmds, m.runTaskAsync(taskContent, agentName))
 				}
 				if len(cmds) > 0 {
 					m.updateViewport()
@@ -553,14 +560,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// 通常の会話として SendChat を使う
+			// 処理中でもWorkerに送信し、作業中ならWorkerが即座にステータスを返す
 			targetAgents := m.detectAgents(input)
 			var cmds []tea.Cmd
 			for _, agentName := range targetAgents {
-				// そのエージェントが処理中でなければ開始
-				if !m.processingAgents[agentName] {
-					m.processingAgents[agentName] = true
-					cmds = append(cmds, m.runAgentAsync(input, agentName, 0))
-				}
+				m.processingAgents[agentName] = true
+				cmds = append(cmds, m.runAgentAsync(input, agentName, 0))
 			}
 
 			if len(cmds) > 0 {
@@ -750,6 +755,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		delete(m.processingAgents, msg.agent)
 
 		if msg.err != nil {
+			// Log error event
+			if log, err := m.logMgr.Get(msg.agent); err == nil {
+				log.Error("Request failed: %v", msg.err)
+			}
+
 			m.messages = append(m.messages, tuiMessage{
 				role:    msg.agent,
 				content: fmt.Sprintf("(エラー: %v)", msg.err),
@@ -822,9 +832,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Log
-		if len(m.messages) >= 2 {
-			userMsg := m.messages[len(m.messages)-2].content
-			if log, err := m.logMgr.Get(msg.agent); err == nil {
+		if log, err := m.logMgr.Get(msg.agent); err == nil {
+			// Event log (info level)
+			log.Info("Request completed in %v", msg.elapsed)
+
+			// Detailed log (debug level)
+			if len(m.messages) >= 2 {
+				userMsg := m.messages[len(m.messages)-2].content
 				log.LogSimple(userMsg, msg.content, msg.elapsed)
 			}
 		}
@@ -901,6 +915,11 @@ func (m *tuiModel) runAgentAsync(input string, targetAgent string, depth int) te
 			prompt = m.buildPrompt(agentName, input)
 		}
 
+		// Log chat start event
+		if log, err := m.logMgr.Get(agentName); err == nil {
+			log.Info("Chat started")
+		}
+
 		// Try to use worker pool first
 		if m.workerPool != nil {
 			if w, ok := m.workerPool.Get(agentName); ok {
@@ -962,6 +981,11 @@ func (m *tuiModel) runAgentAsync(input string, targetAgent string, depth int) te
 func (m *tuiModel) runTaskAsync(taskContent string, targetAgent string) tea.Cmd {
 	return func() tea.Msg {
 		prompt := m.buildTaskPrompt(targetAgent, taskContent)
+
+		// Log task start event
+		if log, err := m.logMgr.Get(targetAgent); err == nil {
+			log.Info("Task started: %s", taskContent)
+		}
 
 		// Worker pool経由でSendTask
 		if m.workerPool != nil {
@@ -1213,8 +1237,8 @@ func (m tuiModel) View() string {
 			}
 			statusContent = statusStyle.Render(statusText)
 		}
-		// ステータス行全体に背景色を適用
-		statusLine := footerStyle.Width(m.width).Render(statusContent)
+		// ステータス行全体に背景色を適用（モードに応じて色を変更）
+		statusLine := m.getFooterStyle().Width(m.width).Render(statusContent)
 
 		inputLine := "You: " + m.textInput.View()
 
@@ -1225,9 +1249,9 @@ func (m tuiModel) View() string {
 			footer = statusLine + "\n" + inputLine
 		}
 	} else {
-		// タスクボードビューのフッターにも背景色
+		// タスクボードビューのフッターにも背景色（モードに応じて色を変更）
 		footerContent := statusStyle.Render(" Tab:チャットに戻る ")
-		footer = footerStyle.Width(m.width).Render(footerContent)
+		footer = m.getFooterStyle().Width(m.width).Render(footerContent)
 	}
 
 	// Combine
@@ -1738,6 +1762,22 @@ func (m *tuiModel) renderModeIndicator() string {
 		return modeAutoStyle.Render("[Auto]")
 	default:
 		return modeInteractiveStyle.Render("[Interactive]")
+	}
+}
+
+// getFooterStyle はモードに応じたフッタースタイルを返す
+func (m *tuiModel) getFooterStyle() lipgloss.Style {
+	if m.modeManager == nil {
+		return footerStyle
+	}
+
+	switch m.modeManager.Current() {
+	case config.ModePlan:
+		return footerPlanStyle
+	case config.ModeAuto:
+		return footerAutoStyle
+	default:
+		return footerStyle
 	}
 }
 
