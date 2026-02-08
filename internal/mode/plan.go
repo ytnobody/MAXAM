@@ -223,3 +223,104 @@ func (pe *PlanExecutor) CheckApprovalOnce(ctx context.Context, issueNumber int, 
 
 	return pe.checker.FindApprovalSince(comments, since), nil
 }
+
+// PlanLabel is the label used to identify plan issues
+const PlanLabel = "maxam-plan"
+
+// FindExistingPlanIssue searches for an existing open plan issue by label
+func (pe *PlanExecutor) FindExistingPlanIssue(ctx context.Context) (*PlanIssue, error) {
+	issues, err := pe.ghClient.ListIssuesWithOptions(ctx, "open", "", []string{PlanLabel})
+	if err != nil {
+		return nil, fmt.Errorf("list issues with label: %w", err)
+	}
+
+	// Skip PRs and find the most recent plan issue
+	var latestIssue *github.Issue
+	for _, issue := range issues {
+		if issue.PullRequestLinks != nil {
+			continue
+		}
+		if latestIssue == nil || issue.CreatedAt.After(latestIssue.CreatedAt.Time) {
+			latestIssue = issue
+		}
+	}
+
+	if latestIssue == nil {
+		return nil, nil
+	}
+
+	return &PlanIssue{
+		IssueNumber: latestIssue.GetNumber(),
+		Title:       latestIssue.GetTitle(),
+		Body:        latestIssue.GetBody(),
+		CreatedAt:   latestIssue.CreatedAt.Time,
+		URL:         latestIssue.GetHTMLURL(),
+	}, nil
+}
+
+// GetOrCreatePlanIssue finds an existing plan issue or creates a new one
+func (pe *PlanExecutor) GetOrCreatePlanIssue(ctx context.Context, analysis *ProjectAnalysis, proposal string) (*PlanIssue, bool, error) {
+	existing, err := pe.FindExistingPlanIssue(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("find existing plan issue: %w", err)
+	}
+
+	if existing != nil {
+		return existing, false, nil
+	}
+
+	// Create new issue
+	issue, err := pe.CreatePlanIssueWithLabel(ctx, analysis, proposal)
+	if err != nil {
+		return nil, false, fmt.Errorf("create plan issue: %w", err)
+	}
+
+	return issue, true, nil
+}
+
+// CreatePlanIssueWithLabel creates an issue with the plan proposal and maxam-plan label
+func (pe *PlanExecutor) CreatePlanIssueWithLabel(ctx context.Context, analysis *ProjectAnalysis, proposal string) (*PlanIssue, error) {
+	title := "[Plan] プロジェクト方針の提案"
+
+	body := fmt.Sprintf(`%s
+
+## 提案内容
+
+%s
+
+---
+
+**承認する場合は、このIssueにコメントで「OK」「LGTM」「承認」「👍」などと返信してください。**
+
+_このIssueはMAXAM Plan Modeによって自動生成されました。_
+`, analysis.Summary, proposal)
+
+	issue, err := pe.ghClient.CreateIssue(ctx, title, body, []string{PlanLabel})
+	if err != nil {
+		return nil, fmt.Errorf("create plan issue: %w", err)
+	}
+
+	return &PlanIssue{
+		IssueNumber: issue.GetNumber(),
+		Title:       issue.GetTitle(),
+		Body:        issue.GetBody(),
+		CreatedAt:   issue.CreatedAt.Time,
+		URL:         issue.GetHTMLURL(),
+	}, nil
+}
+
+// PostPlanComment posts a plan proposal as a comment to an existing issue
+func (pe *PlanExecutor) PostPlanComment(ctx context.Context, issueNumber int, proposal string) error {
+	body := fmt.Sprintf(`## 新しいプラン提案
+
+%s
+
+---
+
+**承認する場合は「OK」「LGTM」「承認」「👍」などと返信してください。**
+
+_このコメントはMAXAM Plan Modeによって自動生成されました。_
+`, proposal)
+
+	return pe.ghClient.CommentIssue(ctx, issueNumber, body)
+}

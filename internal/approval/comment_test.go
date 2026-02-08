@@ -35,6 +35,12 @@ func TestCommentChecker_IsApprovalComment(t *testing.T) {
 		{"approved lowercase", "approved", true},
 		{"Approved titlecase", "Approved", true},
 
+		// Thumbs up emoji
+		{":+1: shortcode", ":+1:", true},
+		{"👍 emoji", "👍", true},
+		{":+1: in sentence", "Looks good :+1:", true},
+		{"👍 with message", "Great work! 👍", true},
+
 		// Non-approval cases
 		{"empty string", "", false},
 		{"random text", "This is a random comment", false},
