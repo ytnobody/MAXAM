@@ -295,6 +295,15 @@ func initialTuiModel(workDir string) tuiModel {
 		}
 	}
 
+	// Setup ccusage client (silently disabled if not available)
+	ccClient := ccusage.NewClient()
+
+	// Load config first (needed for GitHub settings)
+	cfg, err := config.LoadWithProject(workDir)
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+
 	// Setup PR watcher for worktree cleanup (silently fail if no GitHub access)
 	var prWatcher *gh.Watcher
 	var ghClient *gh.Client
@@ -303,25 +312,18 @@ func initialTuiModel(workDir string) tuiModel {
 	modeManager := mode.NewManager(config.ModeInteractive)
 
 	var taskStatusFetcher *taskstatus.Fetcher
-	if client, err := gh.NewClient("ytnobody", "MAXAM"); err == nil {
-		ghClient = client
-		prWatcher = gh.NewWatcher(ghClient)
+	if ghCfg := cfg.GetGitHubConfig(); ghCfg != nil && ghCfg.Owner != "" && ghCfg.Repo != "" {
+		if client, err := gh.NewClient(ghCfg.Owner, ghCfg.Repo); err == nil {
+			ghClient = client
+			prWatcher = gh.NewWatcher(ghClient)
 
-		// Setup plan mode components
-		planExecutor = mode.NewPlanExecutor(ghClient, nil)
-		approvalWatcher = approval.NewWatcher(ghClient)
+			// Setup plan mode components
+			planExecutor = mode.NewPlanExecutor(ghClient, nil)
+			approvalWatcher = approval.NewWatcher(ghClient)
 
-		// Setup task status fetcher (uses underlying github client)
-		taskStatusFetcher = taskstatus.NewFetcher(client.GetUnderlyingClient(), "ytnobody", "MAXAM")
-	}
-
-	// Setup ccusage client (silently disabled if not available)
-	ccClient := ccusage.NewClient()
-
-	// Setup agent router
-	cfg, err := config.LoadWithProject(workDir)
-	if err != nil {
-		cfg = config.DefaultConfig()
+			// Setup task status fetcher (uses underlying github client)
+			taskStatusFetcher = taskstatus.NewFetcher(client.GetUnderlyingClient(), ghCfg.Owner, ghCfg.Repo)
+		}
 	}
 	routerAgents := make([]router.AgentInfo, len(cfg.Agents))
 	agentNames := make([]string, len(cfg.Agents))

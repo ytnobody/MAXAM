@@ -1,5 +1,8 @@
 version: "1"
 default_agent: mei
+github:
+  owner: "ytnobody"
+  repo: "MAXAM"
 agents:
     - name: mei
       full_name: mei

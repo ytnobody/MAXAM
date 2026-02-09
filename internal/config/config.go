@@ -51,6 +51,12 @@ type HeartbeatConfig struct {
 	MaxRetries int    `yaml:"max_retries,omitempty"` // Max restart attempts
 }
 
+// GitHubConfig holds GitHub repository settings
+type GitHubConfig struct {
+	Owner string `yaml:"owner"` // Repository owner (e.g., "ytnobody")
+	Repo  string `yaml:"repo"`  // Repository name (e.g., "MAXAM")
+}
+
 // Config represents the MAXAM configuration
 type Config struct {
 	Version               string           `yaml:"version"`
@@ -65,6 +71,7 @@ type Config struct {
 	MentionCheckerEnabled *bool            `yaml:"mention_checker_enabled,omitempty"`
 	LogLevel              string           `yaml:"log_level,omitempty"`
 	Heartbeat             *HeartbeatConfig `yaml:"heartbeat,omitempty"`
+	GitHub                *GitHubConfig    `yaml:"github,omitempty"`
 }
 
 // AgentConfig represents an agent configuration
@@ -283,6 +290,11 @@ func mergeConfigs(base, override *Config) *Config {
 	// Override log level if set
 	if override.LogLevel != "" {
 		result.LogLevel = override.LogLevel
+	}
+
+	// Override GitHub config if set
+	if override.GitHub != nil {
+		result.GitHub = override.GitHub
 	}
 
 	return &result
@@ -513,4 +525,10 @@ func (c *Config) GetHeartbeatConfig() HeartbeatConfig {
 	}
 
 	return cfg
+}
+
+// GetGitHubConfig returns the GitHub configuration
+// Returns nil if not configured
+func (c *Config) GetGitHubConfig() *GitHubConfig {
+	return c.GitHub
 }
