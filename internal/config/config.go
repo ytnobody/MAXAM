@@ -75,6 +75,7 @@ type AgentConfig struct {
 	Model      string `yaml:"model,omitempty"`       // opus, sonnet, haiku
 	Color      string `yaml:"color,omitempty"`       // hex color code (e.g., "#FF9933")
 	InstanceID string `yaml:"instance_id,omitempty"` // for multi-instance support (e.g., "1", "2")
+	GitHubUser string `yaml:"github_user,omitempty"` // GitHub username for task tracking
 }
 
 // TODO: Move to config.yaml when multi-instance feature is stabilized

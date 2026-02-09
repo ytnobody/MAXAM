@@ -281,6 +281,96 @@ func (c *Client) ListPRs(ctx context.Context) ([]*github.PullRequest, error) {
 	return prs, nil
 }
 
+// MemberTask represents a task (issue/PR) assigned to a member
+type MemberTask struct {
+	Assignee  string // GitHub username
+	Number    int    // Issue or PR number
+	Title     string
+	Type      string // "issue" or "pr"
+	Status    string // "作業中", "レビュー待ち", etc.
+	IsDraft   bool
+	UpdatedAt time.Time
+}
+
+// GetMemberTasks retrieves tasks assigned to team members from open issues and PRs
+func (c *Client) GetMemberTasks(ctx context.Context, memberUsernames []string) ([]MemberTask, error) {
+	var tasks []MemberTask
+
+	// Create a set of member usernames for quick lookup
+	memberSet := make(map[string]bool)
+	for _, username := range memberUsernames {
+		memberSet[username] = true
+	}
+
+	// Get open issues assigned to members
+	issues, err := c.ListIssues(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("list issues for tasks: %w", err)
+	}
+
+	for _, issue := range issues {
+		// Skip PRs (issues API also returns PRs)
+		if issue.PullRequestLinks != nil {
+			continue
+		}
+
+		for _, assignee := range issue.Assignees {
+			if assignee.Login != nil && memberSet[*assignee.Login] {
+				status := "作業中"
+				// Check for labels that indicate status
+				for _, label := range issue.Labels {
+					if label.Name != nil {
+						switch *label.Name {
+						case "in-review", "review":
+							status = "レビュー待ち"
+						case "blocked":
+							status = "ブロック中"
+						}
+					}
+				}
+
+				tasks = append(tasks, MemberTask{
+					Assignee:  *assignee.Login,
+					Number:    issue.GetNumber(),
+					Title:     issue.GetTitle(),
+					Type:      "issue",
+					Status:    status,
+					UpdatedAt: issue.GetUpdatedAt().Time,
+				})
+			}
+		}
+	}
+
+	// Get open PRs
+	prs, err := c.ListPRs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list PRs for tasks: %w", err)
+	}
+
+	for _, pr := range prs {
+		for _, assignee := range pr.Assignees {
+			if assignee.Login != nil && memberSet[*assignee.Login] {
+				status := "レビュー待ち"
+				if pr.GetDraft() {
+					status = "作業中"
+				}
+
+				tasks = append(tasks, MemberTask{
+					Assignee:  *assignee.Login,
+					Number:    pr.GetNumber(),
+					Title:     pr.GetTitle(),
+					Type:      "pr",
+					Status:    status,
+					IsDraft:   pr.GetDraft(),
+					UpdatedAt: pr.GetUpdatedAt().Time,
+				})
+			}
+		}
+	}
+
+	return tasks, nil
+}
+
 // ReviewPR submits a review on a PR
 func (c *Client) ReviewPR(ctx context.Context, number int, body string, approve bool) error {
 	event := "COMMENT"

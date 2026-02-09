@@ -224,6 +224,11 @@ type tuiModel struct {
 	heartbeatMonitor  *heartbeat.Monitor
 	recoveryHandler   *recovery.Handler
 	heartbeatMsgQueue chan heartbeatEventMsg // Queue for heartbeat events to process in Update
+
+	// Member task status display
+	memberTasks     []gh.MemberTask
+	lastTaskFetch   time.Time
+	taskFetchTicker *time.Ticker
 }
 
 type agentResponseMsg struct {
@@ -535,6 +540,15 @@ type heartbeatEventMsg struct {
 // heartbeatTickMsg triggers periodic heartbeat check processing
 type heartbeatTickMsg struct{}
 
+// memberTasksMsg carries updated member task information
+type memberTasksMsg struct {
+	tasks []gh.MemberTask
+	err   error
+}
+
+// memberTasksTickMsg triggers periodic member tasks fetch
+type memberTasksTickMsg struct{}
+
 func (m tuiModel) Init() tea.Cmd {
 	// Start worker pool
 	if m.workerPool != nil {
@@ -560,6 +574,10 @@ func (m tuiModel) Init() tea.Cmd {
 	if m.heartbeatMsgQueue != nil {
 		cmds = append(cmds, m.processHeartbeatEvents())
 	}
+	// Start member tasks polling (if GitHub client is available)
+	if m.ghClient != nil {
+		cmds = append(cmds, m.fetchMemberTasks(), m.tickMemberTasks())
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -567,6 +585,40 @@ func (m tuiModel) Init() tea.Cmd {
 func (m tuiModel) tickCcusage() tea.Cmd {
 	return tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
 		return ccusageTickMsg{}
+	})
+}
+
+// fetchMemberTasks fetches member tasks from GitHub
+func (m tuiModel) fetchMemberTasks() tea.Cmd {
+	return func() tea.Msg {
+		if m.ghClient == nil {
+			return memberTasksMsg{err: fmt.Errorf("GitHub client not initialized")}
+		}
+
+		// Get member GitHub usernames from config
+		var usernames []string
+		for _, agentCfg := range m.config.Agents {
+			if agentCfg.GitHubUser != "" {
+				usernames = append(usernames, agentCfg.GitHubUser)
+			}
+		}
+
+		if len(usernames) == 0 {
+			return memberTasksMsg{tasks: nil}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		tasks, err := m.ghClient.GetMemberTasks(ctx, usernames)
+		return memberTasksMsg{tasks: tasks, err: err}
+	}
+}
+
+// tickMemberTasks triggers periodic member tasks fetch (every 1 minute)
+func (m tuiModel) tickMemberTasks() tea.Cmd {
+	return tea.Tick(1*time.Minute, func(t time.Time) tea.Msg {
+		return memberTasksTickMsg{}
 	})
 }
 
@@ -949,6 +1001,20 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateViewport()
 		}
 		return m, nil
+
+	case memberTasksMsg:
+		if msg.err == nil {
+			m.memberTasks = msg.tasks
+			m.lastTaskFetch = time.Now()
+		}
+		return m, nil
+
+	case memberTasksTickMsg:
+		// Trigger periodic member tasks fetch
+		if m.ghClient != nil {
+			return m, tea.Batch(m.fetchMemberTasks(), m.tickMemberTasks())
+		}
+		return m, m.tickMemberTasks()
 
 	case planWorkflowMsg:
 		if msg.err != nil {
@@ -1539,9 +1605,17 @@ func (m tuiModel) View() string {
 			}
 			statusContent = statusStyle.Render(fmt.Sprintf(" %s 処理中... ", strings.Join(names, ", ")))
 		} else {
-			// Build status with mode indicator and optional cost display
+			// Build status with mode indicator, task status, and optional cost display
 			modeIndicator := m.renderModeIndicator()
-			statusText := fmt.Sprintf(" %s 履歴:%d ↑↓:履歴 PgUp/Dn:スクロール ", modeIndicator, len(m.inputHist))
+			statusText := fmt.Sprintf(" %s 履歴:%d", modeIndicator, len(m.inputHist))
+
+			// Add member task status if available
+			taskStatus := m.renderMemberTasks()
+			if taskStatus != "" {
+				statusText += fmt.Sprintf(" | %s", taskStatus)
+			}
+
+			statusText += " | ↑↓:履歴 PgUp/Dn:スクロール "
 			if m.ccusageClient != nil && m.todayCost > 0 {
 				statusText += fmt.Sprintf("| %s today ", ccusage.FormatCost(m.todayCost))
 			}
@@ -2341,6 +2415,57 @@ func (m *tuiModel) getFooterStyle() lipgloss.Style {
 	default:
 		return footerStyle
 	}
+}
+
+// renderMemberTasks はメンバーのタスク状況をコンパクトに表示
+// 例: "Yuki:#90作業中 Rin:#92レビュー待ち"
+func (m *tuiModel) renderMemberTasks() string {
+	if len(m.memberTasks) == 0 {
+		return ""
+	}
+
+	// グループ化: assignee -> tasks
+	tasksByMember := make(map[string][]gh.MemberTask)
+	for _, task := range m.memberTasks {
+		tasksByMember[task.Assignee] = append(tasksByMember[task.Assignee], task)
+	}
+
+	var parts []string
+	for _, agentCfg := range m.config.Agents {
+		if agentCfg.GitHubUser == "" {
+			continue
+		}
+		tasks := tasksByMember[agentCfg.GitHubUser]
+		if len(tasks) == 0 {
+			continue
+		}
+
+		// 最新のタスクのみ表示（表示スペース節約）
+		task := tasks[0]
+		shortStatus := task.Status
+		if shortStatus == "レビュー待ち" {
+			shortStatus = "PR"
+		} else if shortStatus == "作業中" {
+			shortStatus = "WIP"
+		}
+
+		// エージェント名はfull_nameから姓を取得
+		displayName := m.members.GetFullName(agentCfg.Name)
+		nameParts := strings.Fields(displayName)
+		shortName := displayName
+		if len(nameParts) > 0 {
+			// 姓のみ（Yuki Tanaka -> Yuki）
+			shortName = nameParts[0]
+		}
+
+		parts = append(parts, fmt.Sprintf("%s:#%d%s", shortName, task.Number, shortStatus))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return strings.Join(parts, " ")
 }
 
 // isNoIssueResponse は「特になし」相当の返答かどうか判定

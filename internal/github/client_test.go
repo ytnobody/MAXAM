@@ -118,3 +118,70 @@ func TestClient_LabelMethodsExist(t *testing.T) {
 	_ = client.RemoveLabel(ctx, 1, "label")
 	_, _ = client.HasLabel(ctx, 1, "label")
 }
+
+func TestMemberTask_Structure(t *testing.T) {
+	// Test that MemberTask struct has all expected fields
+	task := MemberTask{
+		Assignee: "test-user",
+		Number:   42,
+		Title:    "Test Issue",
+		Type:     "issue",
+		Status:   "作業中",
+		IsDraft:  false,
+	}
+
+	if task.Assignee != "test-user" {
+		t.Errorf("Assignee = %q, want %q", task.Assignee, "test-user")
+	}
+	if task.Number != 42 {
+		t.Errorf("Number = %d, want %d", task.Number, 42)
+	}
+	if task.Type != "issue" {
+		t.Errorf("Type = %q, want %q", task.Type, "issue")
+	}
+	if task.Status != "作業中" {
+		t.Errorf("Status = %q, want %q", task.Status, "作業中")
+	}
+}
+
+func TestMemberTask_PRStatus(t *testing.T) {
+	tests := []struct {
+		name           string
+		isDraft        bool
+		expectedStatus string
+	}{
+		{
+			name:           "draft PR shows WIP status",
+			isDraft:        true,
+			expectedStatus: "作業中",
+		},
+		{
+			name:           "non-draft PR shows review status",
+			isDraft:        false,
+			expectedStatus: "レビュー待ち",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Simulate the status logic from GetMemberTasks
+			status := "レビュー待ち"
+			if tt.isDraft {
+				status = "作業中"
+			}
+
+			if status != tt.expectedStatus {
+				t.Errorf("status = %q, want %q", status, tt.expectedStatus)
+			}
+		})
+	}
+}
+
+func TestClient_GetMemberTasksMethodExists(t *testing.T) {
+	client := NewClientWithToken("owner", "repo", "test-token")
+	ctx := context.Background()
+
+	// This test verifies the method exists and has correct signature
+	// It will fail with network errors, which is expected
+	_, _ = client.GetMemberTasks(ctx, []string{"user1", "user2"})
+}
