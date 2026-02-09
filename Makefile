@@ -43,7 +43,6 @@ dist:
 	@mkdir -p $(DIST_DIR)/$(PKG_NAME)
 	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-s -w -X main.Version=$(VERSION)" -o $(DIST_DIR)/$(PKG_NAME)/$(BINARY_NAME)$(EXT) $(CMD_DIR)
 	@cp CLAUDE.md $(DIST_DIR)/$(PKG_NAME)/
-	@cp -r agents $(DIST_DIR)/$(PKG_NAME)/
 	@cd $(DIST_DIR) && zip -r $(PKG_NAME).zip $(PKG_NAME)
 	@rm -rf $(DIST_DIR)/$(PKG_NAME)
 	@echo "Created $(DIST_DIR)/$(PKG_NAME).zip"
