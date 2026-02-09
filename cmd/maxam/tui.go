@@ -33,6 +33,7 @@ import (
 	"github.com/ytnobody/MAXAM/internal/recovery"
 	"github.com/ytnobody/MAXAM/internal/router"
 	"github.com/ytnobody/MAXAM/internal/taskboard"
+	"github.com/ytnobody/MAXAM/internal/taskstatus"
 	"github.com/ytnobody/MAXAM/internal/tui/tasklist"
 	"github.com/ytnobody/MAXAM/internal/worktree"
 )
@@ -224,6 +225,10 @@ type tuiModel struct {
 	heartbeatMonitor  *heartbeat.Monitor
 	recoveryHandler   *recovery.Handler
 	heartbeatMsgQueue chan heartbeatEventMsg // Queue for heartbeat events to process in Update
+
+	// Task status from GitHub PRs
+	taskStatusFetcher *taskstatus.Fetcher
+	taskStatusLine    string // Cached formatted status line
 }
 
 type agentResponseMsg struct {
@@ -297,6 +302,7 @@ func initialTuiModel(workDir string) tuiModel {
 	var approvalWatcher *approval.Watcher
 	modeManager := mode.NewManager(config.ModeInteractive)
 
+	var taskStatusFetcher *taskstatus.Fetcher
 	if client, err := gh.NewClient("ytnobody", "MAXAM"); err == nil {
 		ghClient = client
 		prWatcher = gh.NewWatcher(ghClient)
@@ -304,6 +310,9 @@ func initialTuiModel(workDir string) tuiModel {
 		// Setup plan mode components
 		planExecutor = mode.NewPlanExecutor(ghClient, nil)
 		approvalWatcher = approval.NewWatcher(ghClient)
+
+		// Setup task status fetcher (uses underlying github client)
+		taskStatusFetcher = taskstatus.NewFetcher(client.GetUnderlyingClient(), "ytnobody", "MAXAM")
 	}
 
 	// Setup ccusage client (silently disabled if not available)
@@ -477,6 +486,7 @@ func initialTuiModel(workDir string) tuiModel {
 		heartbeatMonitor:    hbMonitor,
 		recoveryHandler:     recHandler,
 		heartbeatMsgQueue:   heartbeatMsgQueue,
+		taskStatusFetcher:   taskStatusFetcher,
 	}
 }
 
@@ -498,6 +508,14 @@ type ccusageUpdateMsg struct {
 
 // ccusageTickMsg triggers periodic ccusage updates
 type ccusageTickMsg struct{}
+
+// taskStatusTickMsg triggers periodic task status updates
+type taskStatusTickMsg struct{}
+
+// taskStatusUpdateMsg is sent when task status is updated
+type taskStatusUpdateMsg struct {
+	statusLine string
+}
 
 // planWorkflowMsg is sent when plan workflow completes or fails
 type planWorkflowMsg struct {
@@ -560,6 +578,10 @@ func (m tuiModel) Init() tea.Cmd {
 	if m.heartbeatMsgQueue != nil {
 		cmds = append(cmds, m.processHeartbeatEvents())
 	}
+	// Start task status fetching
+	if m.taskStatusFetcher != nil {
+		cmds = append(cmds, m.fetchTaskStatus(), m.tickTaskStatus())
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -614,6 +636,41 @@ func (m tuiModel) tickPRCheck() tea.Cmd {
 	return tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
 		return prCheckTickMsg{}
 	})
+}
+
+// tickTaskStatus returns a command that triggers task status update every 2 minutes
+func (m tuiModel) tickTaskStatus() tea.Cmd {
+	return tea.Tick(2*time.Minute, func(t time.Time) tea.Msg {
+		return taskStatusTickMsg{}
+	})
+}
+
+// fetchTaskStatus fetches task status from GitHub PRs
+func (m tuiModel) fetchTaskStatus() tea.Cmd {
+	return func() tea.Msg {
+		if m.taskStatusFetcher == nil {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		statuses, err := m.taskStatusFetcher.Fetch(ctx)
+		if err != nil {
+			return nil // Silently fail
+		}
+
+		// Build member name mapping from config
+		memberNames := make(map[string]string)
+		if m.config != nil {
+			for _, agent := range m.config.Agents {
+				// Map lowercase name to display name
+				memberNames[agent.Name] = m.members.GetFullName(agent.Name)
+			}
+		}
+
+		statusLine := taskstatus.FormatStatusLine(statuses, memberNames)
+		return taskStatusUpdateMsg{statusLine: statusLine}
+	}
 }
 
 // watchTaskFile watches for changes to the task file
@@ -928,6 +985,20 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ccusageUpdateMsg:
 		m.todayCost = msg.cost
+		return m, nil
+
+	case taskStatusTickMsg:
+		// 2分ごとにタスク状況を更新
+		if m.taskStatusFetcher != nil {
+			return m, tea.Batch(
+				m.fetchTaskStatus(),
+				m.tickTaskStatus(),
+			)
+		}
+		return m, nil
+
+	case taskStatusUpdateMsg:
+		m.taskStatusLine = msg.statusLine
 		return m, nil
 
 	case issueListMsg:
@@ -1544,6 +1615,10 @@ func (m tuiModel) View() string {
 			statusText := fmt.Sprintf(" %s 履歴:%d ↑↓:履歴 PgUp/Dn:スクロール ", modeIndicator, len(m.inputHist))
 			if m.ccusageClient != nil && m.todayCost > 0 {
 				statusText += fmt.Sprintf("| %s today ", ccusage.FormatCost(m.todayCost))
+			}
+			// Add task status if available
+			if m.taskStatusLine != "" {
+				statusText += fmt.Sprintf("| %s ", m.taskStatusLine)
 			}
 			statusContent = statusStyle.Render(statusText)
 		}
