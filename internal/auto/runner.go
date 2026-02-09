@@ -42,6 +42,13 @@ type TaskExecutor interface {
 	Execute(ctx context.Context, issueNumber int, title string) (prNumber int, err error)
 }
 
+// IssueChecker is the interface for checking open issues
+// Used to determine if auto mode should stop when no open issues remain
+type IssueChecker interface {
+	// CountOpenIssues returns the number of open issues
+	CountOpenIssues(ctx context.Context) (int, error)
+}
+
 // RunnerState represents the state of the runner
 type RunnerState string
 
@@ -60,14 +67,16 @@ const (
 type Runner struct {
 	mu sync.RWMutex
 
-	executor TaskExecutor
-	tasks    []*Task
-	state    RunnerState
+	executor     TaskExecutor
+	issueChecker IssueChecker
+	tasks        []*Task
+	state        RunnerState
 
 	// callbacks
 	onTaskStart    func(task *Task)
 	onTaskComplete func(task *Task)
 	onAllComplete  func(tasks []*Task)
+	onNoOpenIssues func() // Called when auto mode stops due to no open issues
 
 	// config
 	logger *log.Logger
@@ -117,6 +126,20 @@ func (r *Runner) SetOnAllComplete(fn func(tasks []*Task)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.onAllComplete = fn
+}
+
+// SetOnNoOpenIssues sets the callback for when auto mode stops due to no open issues
+func (r *Runner) SetOnNoOpenIssues(fn func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.onNoOpenIssues = fn
+}
+
+// SetIssueChecker sets the issue checker for auto-stop functionality
+func (r *Runner) SetIssueChecker(checker IssueChecker) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.issueChecker = checker
 }
 
 // AddTask adds a task to be executed
@@ -245,7 +268,14 @@ func (r *Runner) Run(ctx context.Context) error {
 			break
 		}
 
-		r.executeTask(ctx, task)
+		shouldStop := r.executeTask(ctx, task)
+		if shouldStop {
+			// No open issues remaining, stop auto mode
+			r.mu.Lock()
+			r.state = RunnerStateCompleted
+			r.mu.Unlock()
+			break
+		}
 	}
 
 	// Call completion callback
@@ -279,7 +309,8 @@ func (r *Runner) nextPendingTask() *Task {
 }
 
 // executeTask executes a single task
-func (r *Runner) executeTask(ctx context.Context, task *Task) {
+// Returns true if auto mode should stop (no open issues remaining)
+func (r *Runner) executeTask(ctx context.Context, task *Task) bool {
 	// Mark as running
 	r.mu.Lock()
 	task.State = TaskStateRunning
@@ -309,11 +340,32 @@ func (r *Runner) executeTask(ctx context.Context, task *Task) {
 		r.logger.Printf("[auto] Task completed: #%d -> PR #%d", task.IssueNumber, prNumber)
 	}
 	onTaskComplete := r.onTaskComplete
+	issueChecker := r.issueChecker
+	onNoOpenIssues := r.onNoOpenIssues
 	r.mu.Unlock()
 
 	if onTaskComplete != nil {
 		onTaskComplete(task)
 	}
+
+	// Check if there are no open issues remaining
+	if task.State == TaskStateCompleted && issueChecker != nil {
+		checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+
+		count, err := issueChecker.CountOpenIssues(checkCtx)
+		if err != nil {
+			r.logger.Printf("[auto] Failed to check open issues: %v", err)
+		} else if count == 0 {
+			r.logger.Printf("[auto] No open issues remaining. Stopping auto mode.")
+			if onNoOpenIssues != nil {
+				onNoOpenIssues()
+			}
+			return true // Signal to stop
+		}
+	}
+
+	return false
 }
 
 // Stop stops the runner
