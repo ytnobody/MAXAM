@@ -354,3 +354,8 @@ func (c *Client) HasLabel(ctx context.Context, number int, label string) (bool, 
 	}
 	return false, nil
 }
+
+// GetUnderlyingClient returns the underlying go-github client
+func (c *Client) GetUnderlyingClient() *github.Client {
+	return c.client
+}
