@@ -18,6 +18,7 @@ import (
 	"github.com/ytnobody/MAXAM/internal/agent/control"
 	"github.com/ytnobody/MAXAM/internal/agent/worker"
 	"github.com/ytnobody/MAXAM/internal/approval"
+	"github.com/ytnobody/MAXAM/internal/branch"
 	"github.com/ytnobody/MAXAM/internal/ccusage"
 	"github.com/ytnobody/MAXAM/internal/config"
 	"github.com/ytnobody/MAXAM/internal/contextmon"
@@ -500,9 +501,12 @@ type ccusageTickMsg struct{}
 
 // planWorkflowMsg is sent when plan workflow completes or fails
 type planWorkflowMsg struct {
-	issueNumber int
-	issueURL    string
-	err         error
+	issueNumber   int
+	issueURL      string
+	branchName    string // milestone branch name if created
+	branchCreated bool   // true if branch was newly created
+	milestoneName string // human-readable milestone name
+	err           error
 }
 
 // planApprovalTickMsg is sent periodically to check for plan approval
@@ -958,10 +962,24 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Plan issue created successfully
+		// Build success message with branch info
+		var statusMsg strings.Builder
+		statusMsg.WriteString(fmt.Sprintf("✅ 議論用Issueを作成しました: %s\n", msg.issueURL))
+
+		// Add branch creation status
+		if msg.branchName != "" {
+			if msg.branchCreated {
+				statusMsg.WriteString(fmt.Sprintf("🌿 マイルストーンブランチを作成しました: `%s`\n", msg.branchName))
+			} else {
+				statusMsg.WriteString(fmt.Sprintf("🌿 既存のマイルストーンブランチを使用: `%s`\n", msg.branchName))
+			}
+		}
+
+		statusMsg.WriteString("承認待ち中... (IssueにOK/LGTMとコメントしてください)")
+
 		m.messages = append(m.messages, tuiMessage{
 			role:    "system",
-			content: fmt.Sprintf("✅ 議論用Issueを作成しました: %s\n承認待ち中... (IssueにOK/LGTMとコメントしてください)", msg.issueURL),
+			content: statusMsg.String(),
 		})
 		m.updateViewport()
 
@@ -2147,7 +2165,7 @@ func (m *tuiModel) handleModeCommand(result mode.ParseResult) (tea.Model, tea.Cm
 }
 
 // startPlanWorkflow starts the plan workflow asynchronously
-// Analyzes project → Creates plan issue → Starts approval polling
+// Analyzes project → Creates milestone branch → Creates plan issue → Starts approval polling
 func (m *tuiModel) startPlanWorkflow() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -2159,20 +2177,56 @@ func (m *tuiModel) startPlanWorkflow() tea.Cmd {
 			return planWorkflowMsg{err: fmt.Errorf("プロジェクト分析に失敗: %w", err)}
 		}
 
-		// Step 2: Generate proposal based on analysis
-		proposal := m.generatePlanProposal(analysis)
+		// Step 2: Generate milestone name and create branch
+		milestoneName := m.generateMilestoneName(analysis)
+		branchName, branchCreated, branchErr := branch.CreateMilestoneBranch(m.workDir, milestoneName)
+		// Branch creation is best-effort; don't fail the workflow if it fails
+		if branchErr != nil {
+			// Log the error but continue
+			branchName = ""
+			branchCreated = false
+		}
 
-		// Step 3: Create plan issue
+		// Step 3: Generate proposal based on analysis (include branch info)
+		proposal := m.generatePlanProposal(analysis)
+		if branchCreated && branchName != "" {
+			proposal += fmt.Sprintf("\n\n### マイルストーンブランチ\n- `%s` を作成しました\n", branchName)
+		} else if branchName != "" {
+			proposal += fmt.Sprintf("\n\n### マイルストーンブランチ\n- `%s` が既に存在します\n", branchName)
+		}
+
+		// Step 4: Create plan issue
 		planIssue, err := m.planExecutor.CreatePlanIssue(ctx, analysis, proposal)
 		if err != nil {
 			return planWorkflowMsg{err: fmt.Errorf("Issue作成に失敗: %w", err)}
 		}
 
 		return planWorkflowMsg{
-			issueNumber: planIssue.IssueNumber,
-			issueURL:    planIssue.URL,
+			issueNumber:   planIssue.IssueNumber,
+			issueURL:      planIssue.URL,
+			branchName:    branchName,
+			branchCreated: branchCreated,
+			milestoneName: milestoneName,
 		}
 	}
+}
+
+// generateMilestoneName generates a milestone name based on project analysis
+// Uses the oldest open issue or current date as the milestone identifier
+func (m *tuiModel) generateMilestoneName(analysis *mode.ProjectAnalysis) string {
+	// If there's a priority issue, use its info
+	if analysis.OldestOpenIssue != nil {
+		// Use format like "issue-123-fix-bug"
+		title := analysis.OldestOpenIssue.Title
+		// Truncate long titles
+		if len(title) > 30 {
+			title = title[:30]
+		}
+		return fmt.Sprintf("issue-%d-%s", analysis.OldestOpenIssue.Number, title)
+	}
+
+	// Fallback to date-based milestone
+	return time.Now().Format("2006-01-02")
 }
 
 // generatePlanProposal generates a plan proposal based on project analysis
