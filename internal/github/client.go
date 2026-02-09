@@ -158,6 +158,16 @@ func (c *Client) CloseIssue(ctx context.Context, number int) error {
 	return nil
 }
 
+// CountOpenIssues returns the number of open issues
+// Implements the auto.IssueChecker interface
+func (c *Client) CountOpenIssues(ctx context.Context) (int, error) {
+	issues, err := c.ListIssues(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	return len(issues), nil
+}
+
 // EditIssue updates an issue's title and/or body
 func (c *Client) EditIssue(ctx context.Context, number int, title, body *string) (*github.Issue, error) {
 	req := &github.IssueRequest{}

@@ -322,3 +322,200 @@ func TestStubExecutor_WithFailure(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+// StubIssueChecker is a test implementation of IssueChecker
+type StubIssueChecker struct {
+	OpenCount int
+	Err       error
+}
+
+func (s *StubIssueChecker) CountOpenIssues(ctx context.Context) (int, error) {
+	return s.OpenCount, s.Err
+}
+
+func TestRunner_AutoStopWhenNoOpenIssues(t *testing.T) {
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	executor := NewStubExecutor()
+	executor.SimulatedDuration = 10 * time.Millisecond
+	executor.NextPRNumber = 100
+	executor.Logger = logger
+
+	issueChecker := &StubIssueChecker{OpenCount: 0} // No open issues
+
+	runner := NewRunner(executor, Config{Logger: logger})
+	runner.SetIssueChecker(issueChecker)
+
+	var noOpenIssuesCalled bool
+	runner.SetOnNoOpenIssues(func() {
+		noOpenIssuesCalled = true
+	})
+
+	runner.AddTask(1, "Task 1")
+	runner.AddTask(2, "Task 2")
+
+	ctx := context.Background()
+	err := runner.Run(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only first task should be completed because auto mode stopped
+	if runner.CompletedCount() != 1 {
+		t.Errorf("expected 1 completed (auto stopped after first), got %d", runner.CompletedCount())
+	}
+
+	if runner.PendingCount() != 1 {
+		t.Errorf("expected 1 pending, got %d", runner.PendingCount())
+	}
+
+	if !noOpenIssuesCalled {
+		t.Error("expected onNoOpenIssues callback to be called")
+	}
+
+	if runner.State() != RunnerStateCompleted {
+		t.Errorf("expected completed state, got %s", runner.State())
+	}
+
+	// Check log message
+	if !strings.Contains(buf.String(), "No open issues remaining") {
+		t.Errorf("expected log message about no open issues: %s", buf.String())
+	}
+}
+
+func TestRunner_ContinuesWithOpenIssues(t *testing.T) {
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	executor := NewStubExecutor()
+	executor.SimulatedDuration = 10 * time.Millisecond
+	executor.NextPRNumber = 100
+
+	issueChecker := &StubIssueChecker{OpenCount: 5} // Still has open issues
+
+	runner := NewRunner(executor, Config{Logger: logger})
+	runner.SetIssueChecker(issueChecker)
+
+	var noOpenIssuesCalled bool
+	runner.SetOnNoOpenIssues(func() {
+		noOpenIssuesCalled = true
+	})
+
+	runner.AddTask(1, "Task 1")
+	runner.AddTask(2, "Task 2")
+
+	ctx := context.Background()
+	err := runner.Run(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Both tasks should be completed
+	if runner.CompletedCount() != 2 {
+		t.Errorf("expected 2 completed, got %d", runner.CompletedCount())
+	}
+
+	if noOpenIssuesCalled {
+		t.Error("onNoOpenIssues should not be called when issues remain")
+	}
+}
+
+func TestRunner_IssueCheckerError(t *testing.T) {
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	executor := NewStubExecutor()
+	executor.SimulatedDuration = 10 * time.Millisecond
+	executor.NextPRNumber = 100
+
+	issueChecker := &StubIssueChecker{Err: errors.New("API error")}
+
+	runner := NewRunner(executor, Config{Logger: logger})
+	runner.SetIssueChecker(issueChecker)
+
+	runner.AddTask(1, "Task 1")
+	runner.AddTask(2, "Task 2")
+
+	ctx := context.Background()
+	err := runner.Run(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should continue even if issue check fails
+	if runner.CompletedCount() != 2 {
+		t.Errorf("expected 2 completed, got %d", runner.CompletedCount())
+	}
+
+	// Check log message about error
+	if !strings.Contains(buf.String(), "Failed to check open issues") {
+		t.Errorf("expected log message about check failure: %s", buf.String())
+	}
+}
+
+func TestRunner_NoIssueCheckerSet(t *testing.T) {
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	executor := NewStubExecutor()
+	executor.SimulatedDuration = 10 * time.Millisecond
+	executor.NextPRNumber = 100
+
+	// No issue checker set - should behave normally
+	runner := NewRunner(executor, Config{Logger: logger})
+
+	runner.AddTask(1, "Task 1")
+	runner.AddTask(2, "Task 2")
+
+	ctx := context.Background()
+	err := runner.Run(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Both tasks should be completed
+	if runner.CompletedCount() != 2 {
+		t.Errorf("expected 2 completed, got %d", runner.CompletedCount())
+	}
+}
+
+func TestRunner_FailedTaskDoesNotTriggerCheck(t *testing.T) {
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	executor := NewStubExecutor()
+	executor.SimulatedDuration = 10 * time.Millisecond
+	executor.SetFailure(1, errors.New("task failed"))
+
+	issueChecker := &StubIssueChecker{OpenCount: 0}
+
+	runner := NewRunner(executor, Config{Logger: logger})
+	runner.SetIssueChecker(issueChecker)
+
+	var noOpenIssuesCalled bool
+	runner.SetOnNoOpenIssues(func() {
+		noOpenIssuesCalled = true
+	})
+
+	runner.AddTask(1, "Task 1 (will fail)")
+	runner.AddTask(2, "Task 2")
+
+	ctx := context.Background()
+	err := runner.Run(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// First task failed, second task completed and triggered stop
+	if runner.FailedCount() != 1 {
+		t.Errorf("expected 1 failed, got %d", runner.FailedCount())
+	}
+	if runner.CompletedCount() != 1 {
+		t.Errorf("expected 1 completed, got %d", runner.CompletedCount())
+	}
+
+	if !noOpenIssuesCalled {
+		t.Error("expected onNoOpenIssues to be called after second task completed")
+	}
+}
