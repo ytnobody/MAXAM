@@ -40,6 +40,18 @@ MAXAMは複数のAIエージェントが協調して開発業務を遂行する�
 
 > **Note:** `.env` は `.gitignore` に追加してください。
 
+### GitHub設定
+
+GitHubリポジトリ情報は`.maxam/config.yaml`に設定します。
+
+```yaml
+github:
+  owner: "ytnobody"
+  repo: "MAXAM"
+```
+
+この設定はPR監視、タスクステータス表示、プランモードなどで使用されます。
+
 ## コーディング規約
 
 ### 全般
