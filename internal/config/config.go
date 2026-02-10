@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -53,18 +54,19 @@ type HeartbeatConfig struct {
 
 // Config represents the MAXAM configuration
 type Config struct {
-	Version               string           `yaml:"version"`
-	TeamName              string           `yaml:"team_name,omitempty"`
-	DefaultAgent          string           `yaml:"default_agent,omitempty"`
-	DefaultMode           Mode             `yaml:"default_mode,omitempty"`
-	Agents                []AgentConfig    `yaml:"agents"`
-	AnalysisMinMessages   int              `yaml:"analysis_min_messages,omitempty"`
-	ContextMode           ContextMode      `yaml:"context_mode,omitempty"`
-	YOLOMode              bool             `yaml:"yolo_mode,omitempty"`
-	WorkersPerAgent       int              `yaml:"workers_per_agent,omitempty"`
-	MentionCheckerEnabled *bool            `yaml:"mention_checker_enabled,omitempty"`
-	LogLevel              string           `yaml:"log_level,omitempty"`
-	Heartbeat             *HeartbeatConfig `yaml:"heartbeat,omitempty"`
+	Version                   string           `yaml:"version"`
+	TeamName                  string           `yaml:"team_name,omitempty"`
+	DefaultAgent              string           `yaml:"default_agent,omitempty"`
+	DefaultMode               Mode             `yaml:"default_mode,omitempty"`
+	Agents                    []AgentConfig    `yaml:"agents"`
+	AnalysisMinMessages       int              `yaml:"analysis_min_messages,omitempty"`
+	ContextMode               ContextMode      `yaml:"context_mode,omitempty"`
+	YOLOMode                  bool             `yaml:"yolo_mode,omitempty"`
+	WorkersPerAgent           int              `yaml:"workers_per_agent,omitempty"`
+	MentionCheckerEnabled     *bool            `yaml:"mention_checker_enabled,omitempty"`
+	LogLevel                  string           `yaml:"log_level,omitempty"`
+	Heartbeat                 *HeartbeatConfig `yaml:"heartbeat,omitempty"`
+	TaskStatusPollingInterval string           `yaml:"task_status_polling_interval,omitempty"` // e.g., "5m", "10m"
 }
 
 // AgentConfig represents an agent configuration
@@ -485,6 +487,9 @@ func LoadFromPath(path string) (*Config, error) {
 // DefaultHeartbeatInterval is the default heartbeat monitoring interval
 const DefaultHeartbeatInterval = "10s"
 
+// DefaultTaskStatusPollingInterval is the default interval for task status polling
+const DefaultTaskStatusPollingInterval = "5m"
+
 // DefaultHeartbeatTimeout is the default heartbeat response timeout
 const DefaultHeartbeatTimeout = "30s"
 
@@ -514,4 +519,19 @@ func (c *Config) GetHeartbeatConfig() HeartbeatConfig {
 	}
 
 	return cfg
+}
+
+// GetTaskStatusPollingInterval returns the task status polling interval as time.Duration
+// Returns 5 minutes if not configured or if parsing fails
+func (c *Config) GetTaskStatusPollingInterval() time.Duration {
+	if c.TaskStatusPollingInterval == "" {
+		d, _ := time.ParseDuration(DefaultTaskStatusPollingInterval)
+		return d
+	}
+	d, err := time.ParseDuration(c.TaskStatusPollingInterval)
+	if err != nil {
+		d, _ = time.ParseDuration(DefaultTaskStatusPollingInterval)
+		return d
+	}
+	return d
 }

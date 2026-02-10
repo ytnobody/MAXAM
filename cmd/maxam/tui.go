@@ -615,9 +615,14 @@ func (m tuiModel) fetchMemberTasks() tea.Cmd {
 	}
 }
 
-// tickMemberTasks triggers periodic member tasks fetch (every 1 minute)
+// tickMemberTasks triggers periodic member tasks fetch
+// Default interval is 5 minutes, configurable via task_status_polling_interval
 func (m tuiModel) tickMemberTasks() tea.Cmd {
-	return tea.Tick(1*time.Minute, func(t time.Time) tea.Msg {
+	interval := 5 * time.Minute // default
+	if m.config != nil {
+		interval = m.config.GetTaskStatusPollingInterval()
+	}
+	return tea.Tick(interval, func(t time.Time) tea.Msg {
 		return memberTasksTickMsg{}
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -895,9 +896,9 @@ func TestEnsureProjectInitializedNoOverwrite(t *testing.T) {
 
 func TestIsProjectInitialized(t *testing.T) {
 	tests := []struct {
-		name      string
-		setup     func(string)
-		expected  bool
+		name     string
+		setup    func(string)
+		expected bool
 	}{
 		{
 			name: "初期化されていない",
@@ -1384,5 +1385,49 @@ func TestMergeConfigsMentionChecker(t *testing.T) {
 				t.Errorf("IsMentionCheckerEnabled() = %v, want %v", got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestGetTaskStatusPollingInterval(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		expected time.Duration
+	}{
+		{
+			name:     "デフォルト（空）は5分",
+			cfg:      &Config{},
+			expected: 5 * time.Minute,
+		},
+		{
+			name:     "カスタム値 10分",
+			cfg:      &Config{TaskStatusPollingInterval: "10m"},
+			expected: 10 * time.Minute,
+		},
+		{
+			name:     "カスタム値 30秒",
+			cfg:      &Config{TaskStatusPollingInterval: "30s"},
+			expected: 30 * time.Second,
+		},
+		{
+			name:     "無効な値はデフォルト",
+			cfg:      &Config{TaskStatusPollingInterval: "invalid"},
+			expected: 5 * time.Minute,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.GetTaskStatusPollingInterval()
+			if got != tt.expected {
+				t.Errorf("GetTaskStatusPollingInterval() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDefaultTaskStatusPollingInterval(t *testing.T) {
+	if DefaultTaskStatusPollingInterval != "5m" {
+		t.Errorf("DefaultTaskStatusPollingInterval = %q, want \"5m\"", DefaultTaskStatusPollingInterval)
 	}
 }
