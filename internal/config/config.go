@@ -57,6 +57,12 @@ type GitHubConfig struct {
 	Repo  string `yaml:"repo"`  // Repository name (e.g., "MAXAM")
 }
 
+// WebSocketConfig holds WebSocket server settings
+type WebSocketConfig struct {
+	Enabled bool `yaml:"enabled"` // Whether WebSocket server is enabled (default: false)
+	Port    int  `yaml:"port"`    // WebSocket server port (default: 8080)
+}
+
 // Config represents the MAXAM configuration
 type Config struct {
 	Version               string           `yaml:"version"`
@@ -72,6 +78,7 @@ type Config struct {
 	LogLevel              string           `yaml:"log_level,omitempty"`
 	Heartbeat             *HeartbeatConfig `yaml:"heartbeat,omitempty"`
 	GitHub                *GitHubConfig    `yaml:"github,omitempty"`
+	WebSocket             *WebSocketConfig `yaml:"websocket,omitempty"`
 }
 
 // AgentConfig represents an agent configuration
@@ -295,6 +302,11 @@ func mergeConfigs(base, override *Config) *Config {
 	// Override GitHub config if set
 	if override.GitHub != nil {
 		result.GitHub = override.GitHub
+	}
+
+	// Override WebSocket config if set
+	if override.WebSocket != nil {
+		result.WebSocket = override.WebSocket
 	}
 
 	return &result
@@ -531,4 +543,33 @@ func (c *Config) GetHeartbeatConfig() HeartbeatConfig {
 // Returns nil if not configured
 func (c *Config) GetGitHubConfig() *GitHubConfig {
 	return c.GitHub
+}
+
+// DefaultWebSocketPort is the default WebSocket server port
+const DefaultWebSocketPort = 8080
+
+// GetWebSocketConfig returns the WebSocket configuration with defaults
+func (c *Config) GetWebSocketConfig() WebSocketConfig {
+	if c.WebSocket == nil {
+		return WebSocketConfig{
+			Enabled: false,
+			Port:    DefaultWebSocketPort,
+		}
+	}
+
+	cfg := *c.WebSocket
+
+	if cfg.Port <= 0 {
+		cfg.Port = DefaultWebSocketPort
+	}
+
+	return cfg
+}
+
+// IsWebSocketEnabled returns whether WebSocket server is enabled
+func (c *Config) IsWebSocketEnabled() bool {
+	if c.WebSocket == nil {
+		return false
+	}
+	return c.WebSocket.Enabled
 }
