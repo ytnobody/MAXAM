@@ -172,6 +172,14 @@ func (w *Worker) handleChat(req ChatRequest) {
 	}
 
 	// Available - process normally
+	// Mark as working during chat processing
+	desc := req.Input
+	if len(desc) > 30 {
+		desc = desc[:30] + "..."
+	}
+	w.state.StartTask(desc)
+	defer w.state.CompleteTask()
+
 	prompt := req.Input
 	if w.buildPrompt != nil {
 		prompt = w.buildPrompt(w.name, req.Input)
