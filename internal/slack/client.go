@@ -15,9 +15,9 @@ import (
 
 // Client handles Slack communication
 type Client struct {
-	api          *slack.Client
-	socket       *socketmode.Client
-	botUserID    string
+	api       *slack.Client
+	socket    *socketmode.Client
+	botUserID string
 
 	// Message handling
 	messageQueue chan *IncomingMessage
@@ -28,14 +28,14 @@ type Client struct {
 
 // IncomingMessage represents a message from Slack
 type IncomingMessage struct {
-	Channel      string
-	User         string
-	UserName     string
-	Text         string
-	Timestamp    string
-	ThreadTS     string
-	IsFromBot    bool   // true if message is from a bot (agent)
-	SenderAgent  string // agent name if from bot (e.g., "Mei Chen")
+	Channel     string
+	User        string
+	UserName    string
+	Text        string
+	Timestamp   string
+	ThreadTS    string
+	IsFromBot   bool   // true if message is from a bot (agent)
+	SenderAgent string // agent name if from bot (e.g., "Mei Chen")
 }
 
 // Config holds Slack configuration
