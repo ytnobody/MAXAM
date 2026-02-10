@@ -895,9 +895,9 @@ func TestEnsureProjectInitializedNoOverwrite(t *testing.T) {
 
 func TestIsProjectInitialized(t *testing.T) {
 	tests := []struct {
-		name      string
-		setup     func(string)
-		expected  bool
+		name     string
+		setup    func(string)
+		expected bool
 	}{
 		{
 			name: "初期化されていない",

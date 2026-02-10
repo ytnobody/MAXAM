@@ -4,67 +4,67 @@ import "testing"
 
 func TestParseChatFlags(t *testing.T) {
 	tests := []struct {
-		name         string
-		args         []string
-		wantAgent    string
-		wantDaemon   bool
-		wantMention  bool
+		name        string
+		args        []string
+		wantAgent   string
+		wantDaemon  bool
+		wantMention bool
 	}{
 		{
-			name:         "agent only",
-			args:         []string{"maxam", "chat", "yuki"},
-			wantAgent:    "yuki",
-			wantDaemon:   false,
-			wantMention:  true,
+			name:        "agent only",
+			args:        []string{"maxam", "chat", "yuki"},
+			wantAgent:   "yuki",
+			wantDaemon:  false,
+			wantMention: true,
 		},
 		{
-			name:         "agent with daemon",
-			args:         []string{"maxam", "chat", "team", "--daemon"},
-			wantAgent:    "team",
-			wantDaemon:   true,
-			wantMention:  false, // daemon mode: default off
+			name:        "agent with daemon",
+			args:        []string{"maxam", "chat", "team", "--daemon"},
+			wantAgent:   "team",
+			wantDaemon:  true,
+			wantMention: false, // daemon mode: default off
 		},
 		{
-			name:         "daemon with mention-check explicitly enabled",
-			args:         []string{"maxam", "chat", "team", "--daemon", "--mention-check"},
-			wantAgent:    "team",
-			wantDaemon:   true,
-			wantMention:  true,
+			name:        "daemon with mention-check explicitly enabled",
+			args:        []string{"maxam", "chat", "team", "--daemon", "--mention-check"},
+			wantAgent:   "team",
+			wantDaemon:  true,
+			wantMention: true,
 		},
 		{
-			name:         "daemon with mention-check=true",
-			args:         []string{"maxam", "chat", "team", "--daemon", "--mention-check=true"},
-			wantAgent:    "team",
-			wantDaemon:   true,
-			wantMention:  true,
+			name:        "daemon with mention-check=true",
+			args:        []string{"maxam", "chat", "team", "--daemon", "--mention-check=true"},
+			wantAgent:   "team",
+			wantDaemon:  true,
+			wantMention: true,
 		},
 		{
-			name:         "daemon with mention-check=false",
-			args:         []string{"maxam", "chat", "team", "--daemon", "--mention-check=false"},
-			wantAgent:    "team",
-			wantDaemon:   true,
-			wantMention:  false,
+			name:        "daemon with mention-check=false",
+			args:        []string{"maxam", "chat", "team", "--daemon", "--mention-check=false"},
+			wantAgent:   "team",
+			wantDaemon:  true,
+			wantMention: false,
 		},
 		{
-			name:         "non-daemon with no-mention-check",
-			args:         []string{"maxam", "chat", "yuki", "--no-mention-check"},
-			wantAgent:    "yuki",
-			wantDaemon:   false,
-			wantMention:  false,
+			name:        "non-daemon with no-mention-check",
+			args:        []string{"maxam", "chat", "yuki", "--no-mention-check"},
+			wantAgent:   "yuki",
+			wantDaemon:  false,
+			wantMention: false,
 		},
 		{
-			name:         "uppercase agent name normalized",
-			args:         []string{"maxam", "chat", "YUKI"},
-			wantAgent:    "yuki",
-			wantDaemon:   false,
-			wantMention:  true,
+			name:        "uppercase agent name normalized",
+			args:        []string{"maxam", "chat", "YUKI"},
+			wantAgent:   "yuki",
+			wantDaemon:  false,
+			wantMention: true,
 		},
 		{
-			name:         "empty args",
-			args:         []string{"maxam", "chat"},
-			wantAgent:    "",
-			wantDaemon:   false,
-			wantMention:  true,
+			name:        "empty args",
+			args:        []string{"maxam", "chat"},
+			wantAgent:   "",
+			wantDaemon:  false,
+			wantMention: true,
 		},
 	}
 

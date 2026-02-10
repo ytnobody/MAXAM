@@ -208,7 +208,7 @@ func (p *Pool) Dispatch(ctx context.Context, agentName, prompt string) (string, 
 
 // Stats returns pool statistics
 type Stats struct {
-	AgentName   string
+	AgentName    string
 	TotalWorkers int
 	BusyWorkers  int
 	QueueLength  int

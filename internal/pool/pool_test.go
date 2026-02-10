@@ -19,34 +19,34 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestNew(t *testing.T) {
 	tests := []struct {
-		name           string
-		cfg            Config
-		wantWorkers    int
-		wantQueueSize  int
+		name          string
+		cfg           Config
+		wantWorkers   int
+		wantQueueSize int
 	}{
 		{
-			name:           "default values",
-			cfg:            Config{},
-			wantWorkers:    1,
-			wantQueueSize:  10,
+			name:          "default values",
+			cfg:           Config{},
+			wantWorkers:   1,
+			wantQueueSize: 10,
 		},
 		{
-			name:           "custom values",
-			cfg:            Config{WorkersPerAgent: 3, QueueSize: 20},
-			wantWorkers:    3,
-			wantQueueSize:  20,
+			name:          "custom values",
+			cfg:           Config{WorkersPerAgent: 3, QueueSize: 20},
+			wantWorkers:   3,
+			wantQueueSize: 20,
 		},
 		{
-			name:           "negative workers defaults to 1",
-			cfg:            Config{WorkersPerAgent: -1, QueueSize: 5},
-			wantWorkers:    1,
-			wantQueueSize:  5,
+			name:          "negative workers defaults to 1",
+			cfg:           Config{WorkersPerAgent: -1, QueueSize: 5},
+			wantWorkers:   1,
+			wantQueueSize: 5,
 		},
 		{
-			name:           "zero queue defaults to 10",
-			cfg:            Config{WorkersPerAgent: 2, QueueSize: 0},
-			wantWorkers:    2,
-			wantQueueSize:  10,
+			name:          "zero queue defaults to 10",
+			cfg:           Config{WorkersPerAgent: 2, QueueSize: 0},
+			wantWorkers:   2,
+			wantQueueSize: 10,
 		},
 	}
 

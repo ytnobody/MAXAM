@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	MaxMessages   = 5000
-	DefaultDir    = ".maxam"
-	DefaultFile   = "history.json"
+	MaxMessages = 5000
+	DefaultDir  = ".maxam"
+	DefaultFile = "history.json"
 )
 
 // Message represents a single chat message
