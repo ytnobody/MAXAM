@@ -546,7 +546,7 @@ func (c *Config) GetGitHubConfig() *GitHubConfig {
 }
 
 // DefaultWebSocketPort is the default WebSocket server port
-const DefaultWebSocketPort = 8080
+const DefaultWebSocketPort = 8765
 
 // GetWebSocketConfig returns the WebSocket configuration with defaults
 func (c *Config) GetWebSocketConfig() WebSocketConfig {

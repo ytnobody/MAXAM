@@ -33,6 +33,7 @@ import (
 	"github.com/ytnobody/MAXAM/internal/router"
 	"github.com/ytnobody/MAXAM/internal/taskstatus"
 	"github.com/ytnobody/MAXAM/internal/worktree"
+	"github.com/ytnobody/MAXAM/internal/ws"
 )
 
 // Version is set by ldflags at build time
@@ -220,6 +221,10 @@ type tuiModel struct {
 	// Task status from GitHub PRs
 	taskStatusFetcher *taskstatus.Fetcher
 	taskStatusLine    string // Cached formatted status line
+
+	// WebSocket server and client for chat communication
+	wsServer *ws.Server
+	wsClient *ws.TUIClient
 }
 
 type agentResponseMsg struct {
@@ -427,6 +432,23 @@ func initialTuiModel(workDir string) tuiModel {
 		}
 	})
 
+	// Setup WebSocket server and client
+	var wsServer *ws.Server
+	var wsClient *ws.TUIClient
+	wsCfg := cfg.GetWebSocketConfig()
+	wsServer = ws.NewServer(wsCfg.Port)
+	if err := wsServer.Start(); err == nil {
+		// Connect TUI as a client
+		clientCfg := ws.DefaultTUIClientConfig(wsCfg.Port, "owner")
+		wsClient = ws.NewTUIClient(clientCfg)
+		// Connect in background (non-blocking)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			wsClient.ConnectWithRetry(ctx)
+		}()
+	}
+
 	return tuiModel{
 		agents:              agents,
 		members:             members,
@@ -457,6 +479,8 @@ func initialTuiModel(workDir string) tuiModel {
 		recoveryHandler:     recHandler,
 		heartbeatMsgQueue:   heartbeatMsgQueue,
 		taskStatusFetcher:   taskStatusFetcher,
+		wsServer:            wsServer,
+		wsClient:            wsClient,
 	}
 }
 
@@ -658,6 +682,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.heartbeatMonitor != nil {
 				m.heartbeatMonitor.Stop()
 			}
+			// Stop WebSocket server and client
+			if m.wsClient != nil {
+				m.wsClient.Disconnect()
+			}
+			if m.wsServer != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				m.wsServer.Stop(ctx)
+				cancel()
+			}
 			return m, tea.Quit
 
 		case tea.KeyCtrlL:
@@ -675,6 +708,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logMgr.Close()
 				if m.workerPool != nil {
 					m.workerPool.StopAll()
+				}
+				// Stop WebSocket server and client
+				if m.wsClient != nil {
+					m.wsClient.Disconnect()
+				}
+				if m.wsServer != nil {
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					m.wsServer.Stop(ctx)
+					cancel()
 				}
 				return m, tea.Quit
 			}
@@ -723,6 +765,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, tuiMessage{role: "user", content: input})
 			if m.history != nil {
 				m.history.Add("user", input)
+			}
+
+			// Broadcast user message via WebSocket
+			if m.wsServer != nil {
+				m.wsServer.Broadcast(ws.NewChatMessage("owner", "", input))
 			}
 
 			m.updateViewport()
@@ -1059,6 +1106,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			role:    msg.agent,
 			content: msg.content,
 		})
+
+		// Broadcast agent response via WebSocket
+		if m.wsServer != nil {
+			m.wsServer.Broadcast(ws.NewChatMessage(msg.agent, "", msg.content))
+		}
 
 		// Check for mention leaks in agent response and add to history
 		// Only enforce in Plan/Auto modes, not in Interactive mode
