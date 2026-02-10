@@ -33,6 +33,7 @@ import (
 	"github.com/ytnobody/MAXAM/internal/router"
 	"github.com/ytnobody/MAXAM/internal/taskstatus"
 	"github.com/ytnobody/MAXAM/internal/worktree"
+	"github.com/ytnobody/MAXAM/internal/ws"
 )
 
 // Version is set by ldflags at build time
@@ -220,6 +221,10 @@ type tuiModel struct {
 	// Task status from GitHub PRs
 	taskStatusFetcher *taskstatus.Fetcher
 	taskStatusLine    string // Cached formatted status line
+
+	// WebSocket server and client for real-time communication
+	wsServer *ws.Server
+	wsClient ws.AgentClient
 }
 
 type agentResponseMsg struct {
@@ -427,6 +432,27 @@ func initialTuiModel(workDir string) tuiModel {
 		}
 	})
 
+	// Setup WebSocket server and client for real-time communication
+	var wsServer *ws.Server
+	var wsClient ws.AgentClient
+	wsCfg := cfg.GetWebSocketConfig()
+	if wsCfg.Enabled {
+		wsServer = ws.NewServer(wsCfg.Port)
+		if err := wsServer.Start(); err == nil {
+			// Connect TUI as a client to the server
+			clientConfig := ws.DefaultAgentClientConfig(
+				fmt.Sprintf("ws://localhost:%d/ws", wsCfg.Port),
+				"tui",
+			)
+			if client, err := ws.NewAgentClient(clientConfig); err == nil {
+				ctx := context.Background()
+				if err := client.Connect(ctx); err == nil {
+					wsClient = client
+				}
+			}
+		}
+	}
+
 	return tuiModel{
 		agents:              agents,
 		members:             members,
@@ -439,9 +465,9 @@ func initialTuiModel(workDir string) tuiModel {
 		messages:            messages,
 		inputHist:           make([]string, 0),
 		processingAgents:    make(map[string]bool),
-		histIdx:     -1,
-		currentView: viewChat,
-		prWatcher:   prWatcher,
+		histIdx:             -1,
+		currentView:         viewChat,
+		prWatcher:           prWatcher,
 		ccusageClient:       ccClient,
 		analysisMinMessages: cfg.GetAnalysisMinMessages(),
 		errorDetector:       errorwatch.DefaultDetector(),
@@ -457,6 +483,8 @@ func initialTuiModel(workDir string) tuiModel {
 		recoveryHandler:     recHandler,
 		heartbeatMsgQueue:   heartbeatMsgQueue,
 		taskStatusFetcher:   taskStatusFetcher,
+		wsServer:            wsServer,
+		wsClient:            wsClient,
 	}
 }
 
@@ -658,6 +686,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.heartbeatMonitor != nil {
 				m.heartbeatMonitor.Stop()
 			}
+			// Stop WebSocket client and server
+			if m.wsClient != nil {
+				m.wsClient.Close()
+			}
+			if m.wsServer != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				m.wsServer.Stop(ctx)
+				cancel()
+			}
 			return m, tea.Quit
 
 		case tea.KeyCtrlL:
@@ -675,6 +712,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logMgr.Close()
 				if m.workerPool != nil {
 					m.workerPool.StopAll()
+				}
+				// Stop WebSocket client and server
+				if m.wsClient != nil {
+					m.wsClient.Close()
+				}
+				if m.wsServer != nil {
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					m.wsServer.Stop(ctx)
+					cancel()
 				}
 				return m, tea.Quit
 			}
@@ -723,6 +769,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, tuiMessage{role: "user", content: input})
 			if m.history != nil {
 				m.history.Add("user", input)
+			}
+
+			// Broadcast user message to WebSocket clients
+			if m.wsClient != nil && m.wsClient.IsConnected() {
+				wsMsg := ws.NewChatMessage("user", "", input)
+				m.wsClient.Send(wsMsg)
 			}
 
 			m.updateViewport()
@@ -1059,6 +1111,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			role:    msg.agent,
 			content: msg.content,
 		})
+
+		// Broadcast agent response to WebSocket clients
+		if m.wsClient != nil && m.wsClient.IsConnected() {
+			wsMsg := ws.NewChatMessage(msg.agent, "", msg.content)
+			m.wsClient.Send(wsMsg)
+		}
 
 		// Check for mention leaks in agent response and add to history
 		// Only enforce in Plan/Auto modes, not in Interactive mode
