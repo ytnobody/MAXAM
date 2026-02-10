@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/ytnobody/MAXAM/internal/logger"
 	"github.com/ytnobody/MAXAM/internal/member"
 	"github.com/ytnobody/MAXAM/internal/mention"
+	"github.com/ytnobody/MAXAM/internal/ws"
 )
 
 // chatFlags holds parsed command line flags for chat command
@@ -22,6 +24,8 @@ type chatFlags struct {
 	agentName    string
 	daemon       bool
 	mentionCheck bool
+	websocket    bool
+	wsPort       int
 }
 
 // ChatSession manages an interactive conversation with an agent
@@ -33,6 +37,7 @@ type ChatSession struct {
 	history      []chatMessage
 	mentionCheck bool
 	daemon       bool
+	wsServer     *ws.Server
 }
 
 type chatMessage struct {
@@ -68,6 +73,13 @@ func parseChatFlags(args []string) chatFlags {
 			flags.mentionCheck = false
 		case arg == "--no-mention-check":
 			flags.mentionCheck = false
+		case arg == "--websocket", arg == "--ws":
+			flags.websocket = true
+		case strings.HasPrefix(arg, "--ws-port="):
+			if port, err := strconv.Atoi(strings.TrimPrefix(arg, "--ws-port=")); err == nil {
+				flags.wsPort = port
+				flags.websocket = true
+			}
 		}
 	}
 
@@ -79,9 +91,11 @@ func runChat() {
 		fmt.Fprintln(os.Stderr, "Usage: maxam chat <agent> [flags]")
 		fmt.Fprintln(os.Stderr, "Agents: (run 'maxam team list' to see configured agents)")
 		fmt.Fprintln(os.Stderr, "Flags:")
-		fmt.Fprintln(os.Stderr, "  --daemon          Run in daemon mode (wait for input continuously)")
-		fmt.Fprintln(os.Stderr, "  --mention-check   Enable mention checker (default: on, off in daemon mode)")
+		fmt.Fprintln(os.Stderr, "  --daemon            Run in daemon mode (wait for input continuously)")
+		fmt.Fprintln(os.Stderr, "  --mention-check     Enable mention checker (default: on, off in daemon mode)")
 		fmt.Fprintln(os.Stderr, "  --no-mention-check  Disable mention checker")
+		fmt.Fprintln(os.Stderr, "  --websocket, --ws   Enable WebSocket broadcast (daemon mode only)")
+		fmt.Fprintln(os.Stderr, "  --ws-port=PORT      WebSocket server port (default: 8080)")
 		os.Exit(1)
 	}
 
@@ -121,6 +135,25 @@ func runChat() {
 		daemon:       flags.daemon,
 	}
 	defer session.logMgr.Close()
+
+	// Start WebSocket server if enabled (daemon mode only)
+	if flags.websocket && flags.daemon {
+		port := flags.wsPort
+		if port == 0 {
+			port = 8080
+		}
+		session.wsServer = ws.NewServer(port)
+		if err := session.wsServer.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to start WebSocket server: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "WebSocket server started on port %d\n", port)
+			defer func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				session.wsServer.Stop(ctx)
+			}()
+		}
+	}
 
 	if flags.agentName == "team" {
 		if flags.daemon {
@@ -329,6 +362,12 @@ func (s *ChatSession) processTeamMessage(input string) {
 
 	s.history = append(s.history, chatMessage{role: "user", content: input})
 
+	// Broadcast user input via WebSocket if server is running
+	if s.wsServer != nil && s.wsServer.IsRunning() {
+		userMsg := ws.NewChatMessage("owner", "", input)
+		s.wsServer.Broadcast(userMsg)
+	}
+
 	// Detect all mentioned agents
 	mentioned := s.members.DetectMentions(input)
 	if len(mentioned) == 0 {
@@ -343,6 +382,7 @@ func (s *ChatSession) processTeamMessage(input string) {
 			continue
 		}
 
+		fullName := s.members.GetFullName(agentName)
 		prompt := s.buildPrompt(agentName, input)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -356,6 +396,12 @@ func (s *ChatSession) processTeamMessage(input string) {
 
 		result = strings.TrimSpace(result)
 		fmt.Println(result)
+
+		// Broadcast agent response via WebSocket if server is running
+		if s.wsServer != nil && s.wsServer.IsRunning() {
+			agentMsg := ws.NewChatMessage(fullName, "", result)
+			s.wsServer.Broadcast(agentMsg)
+		}
 
 		// Check for mention leaks in agent response
 		if s.mentionCheck {

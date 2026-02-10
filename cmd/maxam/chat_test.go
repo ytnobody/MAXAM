@@ -9,6 +9,8 @@ func TestParseChatFlags(t *testing.T) {
 		wantAgent   string
 		wantDaemon  bool
 		wantMention bool
+		wantWS      bool
+		wantWSPort  int
 	}{
 		{
 			name:        "agent only",
@@ -16,6 +18,8 @@ func TestParseChatFlags(t *testing.T) {
 			wantAgent:   "yuki",
 			wantDaemon:  false,
 			wantMention: true,
+			wantWS:      false,
+			wantWSPort:  0,
 		},
 		{
 			name:        "agent with daemon",
@@ -23,6 +27,8 @@ func TestParseChatFlags(t *testing.T) {
 			wantAgent:   "team",
 			wantDaemon:  true,
 			wantMention: false, // daemon mode: default off
+			wantWS:      false,
+			wantWSPort:  0,
 		},
 		{
 			name:        "daemon with mention-check explicitly enabled",
@@ -30,6 +36,8 @@ func TestParseChatFlags(t *testing.T) {
 			wantAgent:   "team",
 			wantDaemon:  true,
 			wantMention: true,
+			wantWS:      false,
+			wantWSPort:  0,
 		},
 		{
 			name:        "daemon with mention-check=true",
@@ -37,6 +45,8 @@ func TestParseChatFlags(t *testing.T) {
 			wantAgent:   "team",
 			wantDaemon:  true,
 			wantMention: true,
+			wantWS:      false,
+			wantWSPort:  0,
 		},
 		{
 			name:        "daemon with mention-check=false",
@@ -44,6 +54,8 @@ func TestParseChatFlags(t *testing.T) {
 			wantAgent:   "team",
 			wantDaemon:  true,
 			wantMention: false,
+			wantWS:      false,
+			wantWSPort:  0,
 		},
 		{
 			name:        "non-daemon with no-mention-check",
@@ -51,6 +63,8 @@ func TestParseChatFlags(t *testing.T) {
 			wantAgent:   "yuki",
 			wantDaemon:  false,
 			wantMention: false,
+			wantWS:      false,
+			wantWSPort:  0,
 		},
 		{
 			name:        "uppercase agent name normalized",
@@ -58,6 +72,8 @@ func TestParseChatFlags(t *testing.T) {
 			wantAgent:   "yuki",
 			wantDaemon:  false,
 			wantMention: true,
+			wantWS:      false,
+			wantWSPort:  0,
 		},
 		{
 			name:        "empty args",
@@ -65,6 +81,35 @@ func TestParseChatFlags(t *testing.T) {
 			wantAgent:   "",
 			wantDaemon:  false,
 			wantMention: true,
+			wantWS:      false,
+			wantWSPort:  0,
+		},
+		{
+			name:        "daemon with websocket flag",
+			args:        []string{"maxam", "chat", "team", "--daemon", "--websocket"},
+			wantAgent:   "team",
+			wantDaemon:  true,
+			wantMention: false,
+			wantWS:      true,
+			wantWSPort:  0,
+		},
+		{
+			name:        "daemon with ws short flag",
+			args:        []string{"maxam", "chat", "team", "--daemon", "--ws"},
+			wantAgent:   "team",
+			wantDaemon:  true,
+			wantMention: false,
+			wantWS:      true,
+			wantWSPort:  0,
+		},
+		{
+			name:        "daemon with ws-port",
+			args:        []string{"maxam", "chat", "team", "--daemon", "--ws-port=9090"},
+			wantAgent:   "team",
+			wantDaemon:  true,
+			wantMention: false,
+			wantWS:      true,
+			wantWSPort:  9090,
 		},
 	}
 
@@ -80,6 +125,12 @@ func TestParseChatFlags(t *testing.T) {
 			}
 			if flags.mentionCheck != tt.wantMention {
 				t.Errorf("mentionCheck = %v, want %v", flags.mentionCheck, tt.wantMention)
+			}
+			if flags.websocket != tt.wantWS {
+				t.Errorf("websocket = %v, want %v", flags.websocket, tt.wantWS)
+			}
+			if flags.wsPort != tt.wantWSPort {
+				t.Errorf("wsPort = %d, want %d", flags.wsPort, tt.wantWSPort)
 			}
 		})
 	}
