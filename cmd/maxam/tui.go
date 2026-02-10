@@ -222,9 +222,9 @@ type tuiModel struct {
 	taskStatusFetcher *taskstatus.Fetcher
 	taskStatusLine    string // Cached formatted status line
 
-	// WebSocket server and client for real-time communication
+	// WebSocket server and client for chat communication
 	wsServer *ws.Server
-	wsClient ws.AgentClient
+	wsClient *ws.TUIClient
 }
 
 type agentResponseMsg struct {
@@ -432,25 +432,21 @@ func initialTuiModel(workDir string) tuiModel {
 		}
 	})
 
-	// Setup WebSocket server and client for real-time communication
+	// Setup WebSocket server and client
 	var wsServer *ws.Server
-	var wsClient ws.AgentClient
+	var wsClient *ws.TUIClient
 	wsCfg := cfg.GetWebSocketConfig()
-	if wsCfg.Enabled {
-		wsServer = ws.NewServer(wsCfg.Port)
-		if err := wsServer.Start(); err == nil {
-			// Connect TUI as a client to the server
-			clientConfig := ws.DefaultAgentClientConfig(
-				fmt.Sprintf("ws://localhost:%d/ws", wsCfg.Port),
-				"tui",
-			)
-			if client, err := ws.NewAgentClient(clientConfig); err == nil {
-				ctx := context.Background()
-				if err := client.Connect(ctx); err == nil {
-					wsClient = client
-				}
-			}
-		}
+	wsServer = ws.NewServer(wsCfg.Port)
+	if err := wsServer.Start(); err == nil {
+		// Connect TUI as a client
+		clientCfg := ws.DefaultTUIClientConfig(wsCfg.Port, "owner")
+		wsClient = ws.NewTUIClient(clientCfg)
+		// Connect in background (non-blocking)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			wsClient.ConnectWithRetry(ctx)
+		}()
 	}
 
 	return tuiModel{
@@ -686,12 +682,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.heartbeatMonitor != nil {
 				m.heartbeatMonitor.Stop()
 			}
-			// Stop WebSocket client and server
+			// Stop WebSocket server and client
 			if m.wsClient != nil {
-				m.wsClient.Close()
+				m.wsClient.Disconnect()
 			}
 			if m.wsServer != nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				m.wsServer.Stop(ctx)
 				cancel()
 			}
@@ -713,12 +709,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.workerPool != nil {
 					m.workerPool.StopAll()
 				}
-				// Stop WebSocket client and server
+				// Stop WebSocket server and client
 				if m.wsClient != nil {
-					m.wsClient.Close()
+					m.wsClient.Disconnect()
 				}
 				if m.wsServer != nil {
-					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 					m.wsServer.Stop(ctx)
 					cancel()
 				}
@@ -771,10 +767,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.history.Add("user", input)
 			}
 
-			// Broadcast user message to WebSocket clients
-			if m.wsClient != nil && m.wsClient.IsConnected() {
-				wsMsg := ws.NewChatMessage("user", "", input)
-				m.wsClient.Send(wsMsg)
+			// Broadcast user message via WebSocket
+			if m.wsServer != nil {
+				m.wsServer.Broadcast(ws.NewChatMessage("owner", "", input))
 			}
 
 			m.updateViewport()
@@ -1112,10 +1107,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			content: msg.content,
 		})
 
-		// Broadcast agent response to WebSocket clients
-		if m.wsClient != nil && m.wsClient.IsConnected() {
-			wsMsg := ws.NewChatMessage(msg.agent, "", msg.content)
-			m.wsClient.Send(wsMsg)
+		// Broadcast agent response via WebSocket
+		if m.wsServer != nil {
+			m.wsServer.Broadcast(ws.NewChatMessage(msg.agent, "", msg.content))
 		}
 
 		// Check for mention leaks in agent response and add to history
