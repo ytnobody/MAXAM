@@ -32,8 +32,6 @@ func main() {
 	switch cmd {
 	case "init":
 		runInit()
-	case "task":
-		runTaskLegacy()
 	case "team":
 		runTeam()
 	case "review":
@@ -69,11 +67,6 @@ Commands:
   (none)               Launch team chat TUI (default)
   chat <agent>         Interactive chat with an agent (mei/yuki/rin/shiori/priya/amara/team)
   chat team --daemon   Daemon mode: wait for input continuously (for external integration)
-  task <description>   Submit a task to Yuki for implementation
-  task add <title>     Add a task to the taskboard
-  task list            List all tasks on the taskboard
-  task delete <id>     Delete a task by ID
-  task status <id> <s> Change task status (pending/in_progress/completed)
   team init            Initialize team configuration interactively
   team add <n> <role>  Add a team member
   team list            List team members
@@ -95,11 +88,6 @@ Agents:
 
 Examples:
   maxam                                           # Start team chat
-  maxam task add "Implement user authentication"  # Add task to board
-  maxam task list                                 # List all tasks
-  maxam task delete 1                             # Delete task #1
-  maxam task status 1 in_progress                 # Change task #1 to in_progress
-  maxam task "Add a login button to the header"  # Delegate to Yuki
   maxam review "Create unit tests for the auth module"
   maxam ask yuki "How would you implement caching here?"
   maxam watch ytnobody/MAXAM              # Watch for new Issues/PRs
