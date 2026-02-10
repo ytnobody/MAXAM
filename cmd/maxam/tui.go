@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/fsnotify/fsnotify"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/agent/control"
@@ -32,9 +31,7 @@ import (
 	"github.com/ytnobody/MAXAM/internal/mode"
 	"github.com/ytnobody/MAXAM/internal/recovery"
 	"github.com/ytnobody/MAXAM/internal/router"
-	"github.com/ytnobody/MAXAM/internal/taskboard"
 	"github.com/ytnobody/MAXAM/internal/taskstatus"
-	"github.com/ytnobody/MAXAM/internal/tui/tasklist"
 	"github.com/ytnobody/MAXAM/internal/worktree"
 )
 
@@ -144,7 +141,6 @@ type viewMode int
 
 const (
 	viewChat viewMode = iota
-	viewTaskboard
 )
 
 type tuiModel struct {
@@ -170,11 +166,6 @@ type tuiModel struct {
 
 	// View switching
 	currentView viewMode
-	tasklist    tasklist.Model
-	taskService *taskboard.FileStore
-
-	// File watcher
-	taskWatcher *fsnotify.Watcher
 
 	// Mention leak warning
 	mentionWarning string
@@ -272,26 +263,6 @@ func initialTuiModel(workDir string) tuiModel {
 				role:    msg.Role,
 				content: msg.Content,
 			})
-		}
-	}
-
-	// Initialize taskboard service (file-based) and tasklist
-	taskService, err := taskboard.NewFileStore("")
-	if err != nil {
-		// Fallback: continue without file store
-		taskService = nil
-	}
-	var tasklistModel tasklist.Model
-	if taskService != nil {
-		tasklistModel = tasklist.New(taskService)
-	}
-
-	// Setup file watcher for task file
-	var taskWatcher *fsnotify.Watcher
-	if taskService != nil {
-		taskWatcher, _ = fsnotify.NewWatcher()
-		if taskWatcher != nil {
-			taskWatcher.Add(taskService.FilePath())
 		}
 	}
 
@@ -468,12 +439,9 @@ func initialTuiModel(workDir string) tuiModel {
 		messages:            messages,
 		inputHist:           make([]string, 0),
 		processingAgents:    make(map[string]bool),
-		histIdx:             -1,
-		currentView:         viewChat,
-		tasklist:            tasklistModel,
-		taskService:         taskService,
-		taskWatcher:         taskWatcher,
-		prWatcher:           prWatcher,
+		histIdx:     -1,
+		currentView: viewChat,
+		prWatcher:   prWatcher,
 		ccusageClient:       ccClient,
 		analysisMinMessages: cfg.GetAnalysisMinMessages(),
 		errorDetector:       errorwatch.DefaultDetector(),
@@ -491,9 +459,6 @@ func initialTuiModel(workDir string) tuiModel {
 		taskStatusFetcher:   taskStatusFetcher,
 	}
 }
-
-// taskFileChangedMsg is sent when the task file is modified externally
-type taskFileChangedMsg struct{}
 
 // prCheckTickMsg is sent periodically to check for merged PRs
 type prCheckTickMsg struct{}
@@ -567,9 +532,6 @@ func (m tuiModel) Init() tea.Cmd {
 	}
 
 	cmds := []tea.Cmd{textinput.Blink, tea.EnterAltScreen, m.tickAnalysis()}
-	if m.taskWatcher != nil {
-		cmds = append(cmds, m.watchTaskFile())
-	}
 	if m.prWatcher != nil {
 		cmds = append(cmds, m.tickPRCheck())
 	}
@@ -675,27 +637,6 @@ func (m tuiModel) fetchTaskStatus() tea.Cmd {
 	}
 }
 
-// watchTaskFile watches for changes to the task file
-func (m tuiModel) watchTaskFile() tea.Cmd {
-	return func() tea.Msg {
-		if m.taskWatcher == nil {
-			return nil
-		}
-		select {
-		case event, ok := <-m.taskWatcher.Events:
-			if !ok {
-				return nil
-			}
-			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
-				return taskFileChangedMsg{}
-			}
-		case <-m.taskWatcher.Errors:
-			// Ignore errors
-		}
-		return nil
-	}
-}
-
 // tickAnalysis は1時間後に軽量分析をトリガーするtickを設定
 func (m tuiModel) tickAnalysis() tea.Cmd {
 	return tea.Tick(time.Hour, func(t time.Time) tea.Msg {
@@ -711,9 +652,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			m.logMgr.Close()
-			if m.taskWatcher != nil {
-				m.taskWatcher.Close()
-			}
 			if m.workerPool != nil {
 				m.workerPool.StopAll()
 			}
@@ -728,14 +666,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.ClearScreen
 
 		case tea.KeyEnter:
-			// タスクボードビューの場合はtasklistに委譲
-			if m.currentView == viewTaskboard {
-				var cmd tea.Cmd
-				newModel, cmd := m.tasklist.Update(msg)
-				m.tasklist = newModel.(tasklist.Model)
-				return m, cmd
-			}
-
 			input := strings.TrimSpace(m.textInput.Value())
 			if input == "" {
 				return m, nil
@@ -743,9 +673,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if input == "exit" || input == "quit" {
 				m.logMgr.Close()
-				if m.taskWatcher != nil {
-					m.taskWatcher.Close()
-				}
 				if m.workerPool != nil {
 					m.workerPool.StopAll()
 				}
@@ -834,13 +761,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case tea.KeyUp:
-			// タスクボードビューの場合はtasklistに委譲
-			if m.currentView == viewTaskboard {
-				var cmd tea.Cmd
-				newModel, cmd := m.tasklist.Update(msg)
-				m.tasklist = newModel.(tasklist.Model)
-				return m, cmd
-			}
 			if msg.Alt || tea.KeyMsg(msg).String() == "shift+up" {
 				// Shift+Up: scroll viewport up
 				m.viewport.LineUp(3)
@@ -861,13 +781,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case tea.KeyDown:
-			// タスクボードビューの場合はtasklistに委譲
-			if m.currentView == viewTaskboard {
-				var cmd tea.Cmd
-				newModel, cmd := m.tasklist.Update(msg)
-				m.tasklist = newModel.(tasklist.Model)
-				return m, cmd
-			}
 			if msg.Alt || tea.KeyMsg(msg).String() == "shift+down" {
 				// Shift+Down: scroll viewport down
 				m.viewport.LineDown(3)
@@ -893,14 +806,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.HalfViewDown()
 			return m, nil
 
-		default:
-			// タスクボードビューで'd'キーの場合はtasklistに委譲
-			if m.currentView == viewTaskboard && msg.String() == "d" {
-				var cmd tea.Cmd
-				newModel, cmd := m.tasklist.Update(msg)
-				m.tasklist = newModel.(tasklist.Model)
-				return m, cmd
-			}
 		}
 
 	case tea.MouseMsg:
@@ -932,18 +837,6 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.textInput.Width = msg.Width - 8
 		m.updateViewport()
-
-	case taskFileChangedMsg:
-		// Task file was modified externally - reload and refresh
-		if m.taskService != nil {
-			m.taskService.Reload()
-			m.tasklist.Refresh()
-		}
-		// Continue watching
-		if m.taskWatcher != nil {
-			return m, m.watchTaskFile()
-		}
-		return m, nil
 
 	case analysisTickMsg:
 		// 1時間ごとの軽量分析トリガー
@@ -1595,11 +1488,7 @@ func (m tuiModel) View() string {
 
 	// Main content
 	var mainContent string
-	if m.currentView == viewTaskboard {
-		mainContent = m.tasklist.View()
-	} else {
-		mainContent = m.viewport.View()
-	}
+	mainContent = m.viewport.View()
 
 	// Footer with input (チャットビューのみ) - ステータス行に背景色
 	var footer string

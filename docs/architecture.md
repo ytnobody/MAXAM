@@ -37,8 +37,7 @@ MAXAM/
 │   └── maxam/              # メインエントリーポイント
 │       ├── main.go         # コマンドディスパッチ
 │       ├── chat.go         # チャット機能
-│       ├── team.go         # チーム管理
-│       └── taskboard.go    # タスクボード
+│       └── team.go         # チーム管理
 │
 ├── internal/
 │   ├── agent/              # エージェント実行
@@ -63,14 +62,6 @@ MAXAM/
 │   ├── config/             # 設定管理
 │   │   ├── config.go       # 設定読み込み
 │   │   └── init.go         # 初期化
-│   │
-│   ├── taskboard/          # タスクボード
-│   │   ├── task.go         # タスクモデル
-│   │   ├── memory.go       # メモリストア
-│   │   └── file_store.go   # ファイルストア
-│   │
-│   ├── tui/                # ターミナルUI
-│   │   └── tasklist/       # タスクリストUI
 │   │
 │   ├── logger/             # ログ管理
 │   ├── mention/            # メンションチェック
