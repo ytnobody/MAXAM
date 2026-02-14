@@ -27,10 +27,12 @@ func runInit() {
 		os.Exit(1)
 	}
 
-	// 2. Load default team from ~/.maxam/default-team.yaml if exists
+	// 2. Load default team
+	// Priority: ~/.maxam/default-team.yaml > built-in default team
 	defaultTeam, err := loadDefaultTeam()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not load default team: %v\n", err)
+		// No user-defined default team, use built-in
+		defaultTeam = config.BuiltinDefaultTeam()
 	}
 
 	if defaultTeam != nil && len(defaultTeam.Agents) > 0 {
@@ -61,12 +63,8 @@ func runInit() {
 	fmt.Printf("  %s/CLAUDE.md\n", config.ProjectConfigDir(workDir))
 	fmt.Println()
 	fmt.Println("Next steps:")
-	if defaultTeam == nil || len(defaultTeam.Agents) == 0 {
-		fmt.Println("  1. Run 'maxam team init' to set up team members")
-		fmt.Println("  2. Or edit .maxam/config.yaml directly")
-	} else {
-		fmt.Println("  Team is ready! Run 'maxam' to start.")
-	}
+	fmt.Println("  Team is ready! Run 'maxam' to start.")
+	fmt.Println("  To customize the team, edit .maxam/config.yaml")
 }
 
 // loadDefaultTeam loads team configuration from ~/.maxam/default-team.yaml
