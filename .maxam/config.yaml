@@ -7,6 +7,7 @@ agents:
     - name: mei
       full_name: mei
       role: PM + アーキテクト
+      model: haiku
     - name: yuki
       full_name: yuki
       role: バックエンド + インフラ
@@ -19,6 +20,7 @@ agents:
     - name: priya
       full_name: priya
       role: レビュー + セキュリティ + QA
+      model: haiku
     - name: amara
       full_name: amara
       role: 分析 + 法的基礎知識

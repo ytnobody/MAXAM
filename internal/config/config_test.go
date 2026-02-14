@@ -1108,6 +1108,7 @@ func TestGetAgentInstances(t *testing.T) {
 			}
 		})
 	}
+
 }
 
 func TestGetAllInstanceKeys(t *testing.T) {
