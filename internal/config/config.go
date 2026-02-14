@@ -448,13 +448,43 @@ func (c *Config) GetAgentByInstanceKey(key string) *AgentConfig {
 }
 
 // GetAgentInstances returns all instances of the specified agent name
+// If no explicit instance_id is configured, automatically generates DefaultMaxInstances instances
 func (c *Config) GetAgentInstances(name string) []AgentConfig {
 	var result []AgentConfig
+	hasExplicitInstance := false
+
 	for _, agent := range c.Agents {
 		if agent.Name == name {
 			result = append(result, agent)
+			if agent.InstanceID != "" {
+				hasExplicitInstance = true
+			}
 		}
 	}
+
+	// If no instances found, return empty
+	if len(result) == 0 {
+		return result
+	}
+
+	// If explicit instance_ids are configured, use as-is
+	if hasExplicitInstance {
+		return result
+	}
+
+	// Auto-generate instances based on DefaultMaxInstances
+	// Take the first (and only) agent as base
+	base := result[0]
+	result = nil // reset
+
+	for i := 0; i < DefaultMaxInstances; i++ {
+		instance := base
+		if i > 0 {
+			instance.InstanceID = fmt.Sprintf("%d", i)
+		}
+		result = append(result, instance)
+	}
+
 	return result
 }
 
