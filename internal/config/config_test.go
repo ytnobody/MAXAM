@@ -399,17 +399,26 @@ func TestProjectClaudeMD(t *testing.T) {
 }
 
 func TestLoadWithProject(t *testing.T) {
+	// Reset cache before test
+	ResetCache()
+
 	// Create temp dirs
 	tmpHome := t.TempDir()
 	projectDir := t.TempDir()
 
 	originalHome := os.Getenv("HOME")
 	os.Setenv("HOME", tmpHome)
-	defer os.Setenv("HOME", originalHome)
+	defer func() {
+		os.Setenv("HOME", originalHome)
+		ResetCache()
+	}()
 
 	// Initialize global config
 	agents, _ := GetEmbeddedAgents()
 	EnsureInitialized(agents)
+
+	// Reset cache to clear initialization load
+	ResetCache()
 
 	// Test 1: No project config - should return global config
 	cfg, err := LoadWithProject(projectDir)
@@ -421,6 +430,9 @@ func TestLoadWithProject(t *testing.T) {
 	}
 
 	// Test 2: With project config - should override
+	// First reset project cache since we're adding a config file
+	ResetProjectCache(projectDir)
+
 	projectMaxamDir := filepath.Join(projectDir, ".maxam")
 	os.MkdirAll(projectMaxamDir, 0755)
 
@@ -1384,5 +1396,185 @@ func TestMergeConfigsMentionChecker(t *testing.T) {
 				t.Errorf("IsMentionCheckerEnabled() = %v, want %v", got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestLoadCaching(t *testing.T) {
+	// Reset cache before test
+	ResetCache()
+
+	tmpHome := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer func() {
+		os.Setenv("HOME", originalHome)
+		ResetCache()
+	}()
+
+	// Initialize
+	agents, _ := GetEmbeddedAgents()
+	EnsureInitialized(agents)
+
+	// Reset cache to clear initialization load
+	ResetCache()
+
+	// First load
+	cfg1, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	// Second load should return same pointer (cached)
+	cfg2, err := Load()
+	if err != nil {
+		t.Fatalf("Load() second call error: %v", err)
+	}
+
+	if cfg1 != cfg2 {
+		t.Error("Load() should return cached config (same pointer)")
+	}
+}
+
+func TestLoadWithProjectCaching(t *testing.T) {
+	// Reset cache before test
+	ResetCache()
+
+	tmpHome := t.TempDir()
+	projectDir := t.TempDir()
+
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer func() {
+		os.Setenv("HOME", originalHome)
+		ResetCache()
+	}()
+
+	// Initialize
+	agents, _ := GetEmbeddedAgents()
+	EnsureInitialized(agents)
+
+	// First load
+	cfg1, err := LoadWithProject(projectDir)
+	if err != nil {
+		t.Fatalf("LoadWithProject() error: %v", err)
+	}
+
+	// Second load should return same pointer (cached)
+	cfg2, err := LoadWithProject(projectDir)
+	if err != nil {
+		t.Fatalf("LoadWithProject() second call error: %v", err)
+	}
+
+	if cfg1 != cfg2 {
+		t.Error("LoadWithProject() should return cached config (same pointer)")
+	}
+}
+
+func TestResetCache(t *testing.T) {
+	// Reset cache before test
+	ResetCache()
+
+	tmpHome := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer func() {
+		os.Setenv("HOME", originalHome)
+		ResetCache()
+	}()
+
+	// Initialize
+	agents, _ := GetEmbeddedAgents()
+	EnsureInitialized(agents)
+
+	// Reset cache to clear initialization load
+	ResetCache()
+
+	// Load
+	cfg1, _ := Load()
+
+	// Reset cache
+	ResetCache()
+
+	// Load again - should be different pointer (fresh load)
+	cfg2, _ := Load()
+
+	if cfg1 == cfg2 {
+		t.Error("After ResetCache(), Load() should return different pointer")
+	}
+}
+
+func TestResetProjectCache(t *testing.T) {
+	// Reset cache before test
+	ResetCache()
+
+	tmpHome := t.TempDir()
+	projectDir := t.TempDir()
+
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer func() {
+		os.Setenv("HOME", originalHome)
+		ResetCache()
+	}()
+
+	// Initialize global config
+	agents, _ := GetEmbeddedAgents()
+	EnsureInitialized(agents)
+
+	// Reset cache to clear initialization load
+	ResetCache()
+
+	// Create a project config so we get merged configs
+	projectMaxamDir := filepath.Join(projectDir, ".maxam")
+	os.MkdirAll(projectMaxamDir, 0755)
+	projectConfigContent := `version: "2"`
+	os.WriteFile(filepath.Join(projectMaxamDir, "config.yaml"), []byte(projectConfigContent), 0644)
+
+	// Load project config
+	cfg1, _ := LoadWithProject(projectDir)
+
+	// Reset only project cache
+	ResetProjectCache(projectDir)
+
+	// Load again - should be different pointer (new merged config)
+	cfg2, _ := LoadWithProject(projectDir)
+
+	if cfg1 == cfg2 {
+		t.Error("After ResetProjectCache(), LoadWithProject() should return different pointer")
+	}
+}
+
+func TestCacheDifferentProjects(t *testing.T) {
+	// Reset cache before test
+	ResetCache()
+
+	tmpHome := t.TempDir()
+	projectDir1 := t.TempDir()
+	projectDir2 := t.TempDir()
+
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer func() {
+		os.Setenv("HOME", originalHome)
+		ResetCache()
+	}()
+
+	// Initialize
+	agents, _ := GetEmbeddedAgents()
+	EnsureInitialized(agents)
+
+	// Load for different projects
+	cfg1, _ := LoadWithProject(projectDir1)
+	cfg2, _ := LoadWithProject(projectDir2)
+
+	// Both should be cached independently
+	cfg1Again, _ := LoadWithProject(projectDir1)
+	cfg2Again, _ := LoadWithProject(projectDir2)
+
+	if cfg1 != cfg1Again {
+		t.Error("Project1 config should be cached")
+	}
+	if cfg2 != cfg2Again {
+		t.Error("Project2 config should be cached")
 	}
 }

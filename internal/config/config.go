@@ -5,9 +5,28 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
+
+// Cache for global config (sync.Once pattern)
+var (
+	globalConfigOnce  sync.Once
+	globalConfig      *Config
+	globalConfigError error
+)
+
+// Cache for project configs (keyed by projectDir)
+var (
+	projectConfigMu    sync.RWMutex
+	projectConfigCache = make(map[string]*cachedConfig)
+)
+
+type cachedConfig struct {
+	config *Config
+	err    error
+}
 
 // ContextMode represents the context mode for system prompts
 type ContextMode string
@@ -191,7 +210,16 @@ func ProjectClaudeMD(projectDir string) string {
 }
 
 // Load reads configuration from ~/.maxam/config.yaml
+// Results are cached using sync.Once pattern for performance
 func Load() (*Config, error) {
+	globalConfigOnce.Do(func() {
+		globalConfig, globalConfigError = loadGlobal()
+	})
+	return globalConfig, globalConfigError
+}
+
+// loadGlobal performs the actual file read (called once)
+func loadGlobal() (*Config, error) {
 	configDir, err := ConfigDir()
 	if err != nil {
 		return nil, err
@@ -216,7 +244,28 @@ func Load() (*Config, error) {
 
 // LoadWithProject loads configuration with project-local overrides
 // Priority: project/.maxam/config.yaml > ~/.maxam/config.yaml > default
+// Results are cached per projectDir for performance
 func LoadWithProject(projectDir string) (*Config, error) {
+	// Check cache first
+	projectConfigMu.RLock()
+	if cached, ok := projectConfigCache[projectDir]; ok {
+		projectConfigMu.RUnlock()
+		return cached.config, cached.err
+	}
+	projectConfigMu.RUnlock()
+
+	// Cache miss - load and cache
+	config, err := loadWithProjectUncached(projectDir)
+
+	projectConfigMu.Lock()
+	projectConfigCache[projectDir] = &cachedConfig{config: config, err: err}
+	projectConfigMu.Unlock()
+
+	return config, err
+}
+
+// loadWithProjectUncached performs the actual load (called once per projectDir)
+func loadWithProjectUncached(projectDir string) (*Config, error) {
 	// 1. Start with global config
 	cfg, err := Load()
 	if err != nil {
@@ -572,4 +621,23 @@ func (c *Config) IsWebSocketEnabled() bool {
 		return false
 	}
 	return c.WebSocket.Enabled
+}
+
+// ResetCache clears all cached configurations
+// Intended for testing purposes only
+func ResetCache() {
+	globalConfigOnce = sync.Once{}
+	globalConfig = nil
+	globalConfigError = nil
+
+	projectConfigMu.Lock()
+	projectConfigCache = make(map[string]*cachedConfig)
+	projectConfigMu.Unlock()
+}
+
+// ResetProjectCache clears cached configuration for a specific project
+func ResetProjectCache(projectDir string) {
+	projectConfigMu.Lock()
+	delete(projectConfigCache, projectDir)
+	projectConfigMu.Unlock()
 }
