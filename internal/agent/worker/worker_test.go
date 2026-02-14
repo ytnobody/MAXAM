@@ -255,6 +255,87 @@ func TestWorkerChatWhileStopped(t *testing.T) {
 	})
 }
 
+func TestAgentState_ForceStop(t *testing.T) {
+	t.Run("force stop while available", func(t *testing.T) {
+		state := NewAgentState()
+		state.ForceStop()
+
+		if !state.IsStopped() {
+			t.Error("expected state to be stopped after ForceStop")
+		}
+	})
+
+	t.Run("force stop while working immediately stops", func(t *testing.T) {
+		state := NewAgentState()
+		state.StartTask("doing work")
+		state.ForceStop()
+
+		if !state.IsStopped() {
+			t.Error("expected state to be stopped after ForceStop while working")
+		}
+		if state.GetCurrentTask() != "" {
+			t.Error("expected current task to be cleared after ForceStop")
+		}
+	})
+
+	t.Run("force stop clears task duration", func(t *testing.T) {
+		state := NewAgentState()
+		state.StartTask("doing work")
+		state.ForceStop()
+
+		if state.GetTaskDuration() != 0 {
+			t.Error("expected task duration to be 0 after ForceStop")
+		}
+	})
+}
+
+func TestPool_Kill(t *testing.T) {
+	t.Run("kill worker", func(t *testing.T) {
+		pool := NewPool()
+		w := NewWorker("yuki", nil)
+		w.Start()
+		pool.Add(w)
+
+		ok := pool.Kill("yuki")
+		if !ok {
+			t.Error("expected Kill to return true")
+		}
+		if !w.IsStopped() {
+			t.Error("expected worker to be stopped after Kill")
+		}
+	})
+
+	t.Run("kill non-existent worker returns false", func(t *testing.T) {
+		pool := NewPool()
+
+		if pool.Kill("nonexistent") {
+			t.Error("expected Kill to return false for non-existent worker")
+		}
+	})
+
+	t.Run("restart killed worker", func(t *testing.T) {
+		pool := NewPool()
+		w := NewWorker("yuki", nil)
+		w.Start()
+		pool.Add(w)
+
+		// Kill the worker
+		pool.Kill("yuki")
+		if !w.IsStopped() {
+			t.Error("precondition failed: worker should be stopped after kill")
+		}
+
+		// Restart it
+		ok := pool.Restart("yuki")
+		if !ok {
+			t.Error("expected Restart to return true")
+		}
+		if w.IsStopped() {
+			t.Error("expected worker to not be stopped after Restart")
+		}
+	})
+}
+
 func TestPool(t *testing.T) {
 	t.Run("add and get worker", func(t *testing.T) {
 		pool := NewPool()

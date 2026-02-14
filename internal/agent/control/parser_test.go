@@ -84,6 +84,25 @@ func TestParser_Parse(t *testing.T) {
 			wantType: CommandResumeAll,
 			wantTgt:  "",
 		},
+		// Individual kill commands
+		{
+			name:     "kill agent with @mention",
+			input:    "@yuki kill",
+			wantType: CommandKill,
+			wantTgt:  "yuki",
+		},
+		{
+			name:     "kill agent uppercase",
+			input:    "@PRIYA KILL",
+			wantType: CommandKill,
+			wantTgt:  "PRIYA",
+		},
+		{
+			name:     "kill agent mixed case",
+			input:    "@Mei Kill",
+			wantType: CommandKill,
+			wantTgt:  "Mei",
+		},
 		// Non-control commands (should return nil)
 		{
 			name:    "regular message",
@@ -163,6 +182,7 @@ func TestParser_IsControlCommand(t *testing.T) {
 	}{
 		{"@yuki stop", true},
 		{"@yuki resume", true},
+		{"@yuki kill", true},
 		{"stop all", true},
 		{"resume all", true},
 		{"hello world", false},
@@ -189,6 +209,7 @@ func TestCommandType_String(t *testing.T) {
 		{CommandResume, "resume"},
 		{CommandStopAll, "stop_all"},
 		{CommandResumeAll, "resume_all"},
+		{CommandKill, "kill"},
 		{CommandUnknown, "unknown"},
 		{CommandType(99), "unknown"},
 	}

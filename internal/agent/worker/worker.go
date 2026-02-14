@@ -112,6 +112,13 @@ func (w *Worker) IsStopped() bool {
 	return w.state.IsStopped()
 }
 
+// Kill forcefully terminates the worker by canceling its context
+// This immediately stops any ongoing work without waiting for completion
+func (w *Worker) Kill() {
+	w.cancel()
+	w.state.ForceStop()
+}
+
 // SendChat sends a chat request and returns immediately
 // The response will be sent to the provided channel
 func (w *Worker) SendChat(input string, response chan<- ChatResponse) {
@@ -376,4 +383,36 @@ func (p *Pool) GetStoppedWorkers() []string {
 		}
 	}
 	return stopped
+}
+
+// Kill forcefully terminates a specific worker by name
+// Returns true if the worker was found and killed
+func (p *Pool) Kill(name string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if w, ok := p.workers[name]; ok {
+		w.Kill()
+		return true
+	}
+	return false
+}
+
+// Restart restarts a killed worker by creating a new context
+func (p *Pool) Restart(name string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if w, ok := p.workers[name]; ok {
+		// Create new context and restart goroutines
+		ctx, cancel := context.WithCancel(context.Background())
+		w.ctx = ctx
+		w.cancel = cancel
+		w.chatChan = make(chan ChatRequest, 10)
+		w.taskChan = make(chan TaskRequest, 10)
+		w.state.Resume()
+		w.wg.Add(2)
+		go w.chatLoop()
+		go w.taskLoop()
+		return true
+	}
+	return false
 }

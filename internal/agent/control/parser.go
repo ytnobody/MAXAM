@@ -19,6 +19,8 @@ const (
 	CommandStopAll
 	// CommandResumeAll represents a resume all command
 	CommandResumeAll
+	// CommandKill represents a force kill command
+	CommandKill
 )
 
 func (c CommandType) String() string {
@@ -31,6 +33,8 @@ func (c CommandType) String() string {
 		return "stop_all"
 	case CommandResumeAll:
 		return "resume_all"
+	case CommandKill:
+		return "kill"
 	default:
 		return "unknown"
 	}
@@ -53,8 +57,8 @@ type Parser struct {
 // NewParser creates a new control command parser
 func NewParser() *Parser {
 	return &Parser{
-		// Match @agentname stop or @agentname resume (case insensitive)
-		mentionPattern: regexp.MustCompile(`(?i)^@(\w+)\s+(stop|resume)\s*$`),
+		// Match @agentname stop, @agentname resume, or @agentname kill (case insensitive)
+		mentionPattern: regexp.MustCompile(`(?i)^@(\w+)\s+(stop|resume|kill)\s*$`),
 		// Match "stop all" or "resume all" (case insensitive)
 		globalPattern: regexp.MustCompile(`(?i)^(stop|resume)\s+all\s*$`),
 	}
@@ -73,14 +77,18 @@ func (p *Parser) Parse(input string) *Command {
 		return &Command{Type: CommandResumeAll}
 	}
 
-	// Check for mention commands (@agent stop, @agent resume)
+	// Check for mention commands (@agent stop, @agent resume, @agent kill)
 	if matches := p.mentionPattern.FindStringSubmatch(input); len(matches) == 3 {
 		target := matches[1]
 		action := strings.ToLower(matches[2])
-		if action == "stop" {
+		switch action {
+		case "stop":
 			return &Command{Type: CommandStop, Target: target}
+		case "resume":
+			return &Command{Type: CommandResume, Target: target}
+		case "kill":
+			return &Command{Type: CommandKill, Target: target}
 		}
-		return &Command{Type: CommandResume, Target: target}
 	}
 
 	return nil
