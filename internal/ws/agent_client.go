@@ -59,6 +59,27 @@ func DefaultAgentClientConfig(serverURL, agentID string) *AgentClientConfig {
 	}
 }
 
+// Validate checks if the configuration is valid
+func (c *AgentClientConfig) Validate() error {
+	if c.ServerURL == "" {
+		return errors.New("server URL is required")
+	}
+	if c.AgentID == "" {
+		return errors.New("agent ID is required")
+	}
+
+	// Validate URL format
+	u, err := url.Parse(c.ServerURL)
+	if err != nil {
+		return fmt.Errorf("invalid server URL: %w", err)
+	}
+	if u.Scheme != "ws" && u.Scheme != "wss" {
+		return fmt.Errorf("server URL must use ws:// or wss:// scheme, got %s", u.Scheme)
+	}
+
+	return nil
+}
+
 // agentClient implements AgentClient
 type agentClient struct {
 	config    *AgentClientConfig
@@ -75,17 +96,8 @@ func NewAgentClient(config *AgentClientConfig) (AgentClient, error) {
 	if config == nil {
 		return nil, errors.New("config is required")
 	}
-	if config.ServerURL == "" {
-		return nil, errors.New("server URL is required")
-	}
-	if config.AgentID == "" {
-		return nil, errors.New("agent ID is required")
-	}
-
-	// Validate URL
-	_, err := url.Parse(config.ServerURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid server URL: %w", err)
+	if err := config.Validate(); err != nil {
+		return nil, err
 	}
 
 	return &agentClient{

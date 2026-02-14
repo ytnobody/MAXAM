@@ -9,6 +9,74 @@ import (
 	"time"
 )
 
+func TestAgentClientConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  *AgentClientConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid config",
+			config: &AgentClientConfig{
+				ServerURL: "ws://localhost:8080/ws",
+				AgentID:   "agent-1",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config with wss",
+			config: &AgentClientConfig{
+				ServerURL: "wss://example.com/ws",
+				AgentID:   "agent-1",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty server URL",
+			config: &AgentClientConfig{
+				ServerURL: "",
+				AgentID:   "agent-1",
+			},
+			wantErr: true,
+			errMsg:  "server URL is required",
+		},
+		{
+			name: "empty agent ID",
+			config: &AgentClientConfig{
+				ServerURL: "ws://localhost:8080/ws",
+				AgentID:   "",
+			},
+			wantErr: true,
+			errMsg:  "agent ID is required",
+		},
+		{
+			name: "invalid URL scheme",
+			config: &AgentClientConfig{
+				ServerURL: "http://localhost:8080/ws",
+				AgentID:   "agent-1",
+			},
+			wantErr: true,
+			errMsg:  "must use ws:// or wss://",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error but got nil")
+				} else if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("error message %q does not contain %q", err.Error(), tt.errMsg)
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestAgentClientConfig(t *testing.T) {
 	t.Run("DefaultAgentClientConfig", func(t *testing.T) {
 		config := DefaultAgentClientConfig("ws://localhost:8080/ws", "agent-1")
@@ -67,14 +135,14 @@ func TestNewAgentClient(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid URL", func(t *testing.T) {
+	t.Run("invalid URL scheme", func(t *testing.T) {
 		config := &AgentClientConfig{
-			ServerURL: "://invalid",
+			ServerURL: "http://localhost:8080/ws",
 			AgentID:   "agent-1",
 		}
 		_, err := NewAgentClient(config)
 		if err == nil {
-			t.Fatal("expected error for invalid URL")
+			t.Fatal("expected error for invalid URL scheme")
 		}
 	})
 }
