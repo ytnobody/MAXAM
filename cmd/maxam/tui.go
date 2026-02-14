@@ -1675,13 +1675,69 @@ func (m *tuiModel) buildPrompt(agentName, input string) string {
 
 	prompt := sb.String()
 
-	// Check context size and update warning
+	// Smart truncation: contextMonitor.ShouldTruncate() を使用
+	// コンテキストが95%以上に達した場合、履歴を再度圧縮
 	if m.contextMonitor != nil {
 		status := m.contextMonitor.Check(len(prompt))
 		if status.Level >= contextmon.LevelWarning {
 			m.contextWarning = status.FormatWarning()
 		} else {
 			m.contextWarning = ""
+		}
+
+		// 95% 超過時は履歴を4件に削減して再構築
+		if m.contextMonitor.ShouldTruncate(len(prompt)) && len(m.messages) > 0 {
+			sb.Reset()
+			// ヘッダーを再構築
+			sb.WriteString("これはチームチャットです。オーナーやチームメンバーと自然に会話してください。\n\n")
+			sb.WriteString("チームメンバー:\n")
+			for i, agentCfg := range m.config.Agents {
+				marker := ""
+				if m.config.DefaultAgent == agentCfg.Name || (m.config.DefaultAgent == "" && i == 0) {
+					marker = "（デフォルト応答者）"
+				}
+				sb.WriteString(fmt.Sprintf("- %s: %s%s\n", m.members.GetFullName(agentCfg.Name), agentCfg.Role, marker))
+			}
+			sb.WriteString("\n重要:\n")
+			sb.WriteString("- 情報が不足していたら質問してください\n")
+			sb.WriteString("- 曖昧な指示には確認を取ってください\n")
+			sb.WriteString("- 作業前に計画を説明し、OKをもらってから進めてください\n")
+			sb.WriteString("- 短く自然な会話で返答してください\n")
+			sb.WriteString("- 他のメンバーに作業を依頼するときは「@名前」で呼びかけてください\n")
+			sb.WriteString("- 呼びかけられたら、その依頼に応答してください\n")
+			sb.WriteString("- 自分自身にはメンションしない（例: 自分がMeiなら @Mei は使わない）\n\n")
+
+			if m.projectContext != "" && !m.projectContextSent {
+				sb.WriteString(m.projectContext)
+				sb.WriteString("\n")
+			} else if m.projectContext != "" {
+				sb.WriteString(fmt.Sprintf("## プロジェクト情報\n\n作業ディレクトリ: %s\n\n", m.workDir))
+			}
+
+			sb.WriteString("## 会話履歴（圧縮）\n\n")
+			// 履歴を4件に削減
+			compressedMessages := m.selectHistoryMessagesWithLimit(4)
+			for _, msg := range compressedMessages {
+				if msg.role == "user" {
+					sb.WriteString(fmt.Sprintf("オーナー: %s\n\n", msg.content))
+				} else {
+					sb.WriteString(fmt.Sprintf("%s: %s\n\n", m.getFullName(msg.role), msg.content))
+				}
+			}
+
+			// Trim persisted history to prevent future overflows
+			if m.history != nil {
+				_ = m.history.TrimToSize(len(compressedMessages) * 2) // Keep slightly more than displayed
+			}
+
+			sb.WriteString("## 今のメッセージ\n\n")
+			if lastRole != "user" {
+				sb.WriteString(fmt.Sprintf("%s からあなたへ: %s\n", m.getFullName(lastRole), input))
+			} else {
+				sb.WriteString(fmt.Sprintf("オーナー: %s\n", input))
+			}
+
+			prompt = sb.String()
 		}
 	}
 
@@ -1690,13 +1746,22 @@ func (m *tuiModel) buildPrompt(agentName, input string) string {
 
 // selectHistoryMessages は履歴メッセージを動的に選択
 // メッセージ長に応じて数を調整し、雑談は除外
+// maxCount を 0 以下にすると自動判定（8件またはコンテキストサイズベース）
 func (m *tuiModel) selectHistoryMessages() []tuiMessage {
+	return m.selectHistoryMessagesWithLimit(0)
+}
+
+// selectHistoryMessagesWithLimit は履歴メッセージを指定数まで選択
+func (m *tuiModel) selectHistoryMessagesWithLimit(maxCount int) []tuiMessage {
 	if len(m.messages) == 0 {
 		return nil
 	}
 
-	// 基本は8件、メッセージ長によって調整
+	// 基本は8件、maxCount が指定されていればそちらを使用
 	baseCount := 8
+	if maxCount > 0 {
+		baseCount = maxCount
+	}
 	totalChars := 0
 	const maxChars = 8000 // 目安の上限
 

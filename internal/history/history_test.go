@@ -159,3 +159,80 @@ func TestDefaultPath(t *testing.T) {
 		t.Errorf("Path() = %s, want %s", h.Path(), expected)
 	}
 }
+
+func TestTrimToSize(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test_history.json")
+
+	h, err := New(path)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	// Add 10 messages
+	for i := 0; i < 10; i++ {
+		h.Add("user", "message "+string(rune('0'+i)))
+	}
+
+	// Trim to 4 messages
+	if err := h.TrimToSize(4); err != nil {
+		t.Fatalf("TrimToSize() error: %v", err)
+	}
+
+	msgs := h.GetAll()
+	if len(msgs) != 4 {
+		t.Errorf("After TrimToSize(4), len = %d, want 4", len(msgs))
+	}
+
+	// Verify persistence
+	h2, err := New(path)
+	if err != nil {
+		t.Fatalf("New() reload error: %v", err)
+	}
+
+	msgs2 := h2.GetAll()
+	if len(msgs2) != 4 {
+		t.Errorf("After reload, len = %d, want 4", len(msgs2))
+	}
+
+	// Verify it kept the most recent messages
+	if msgs2[3].Content != "message 9" {
+		t.Errorf("Last message = %s, want 'message 9'", msgs2[3].Content)
+	}
+}
+
+func TestTrimToSizeEdgeCases(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test_history.json")
+
+	h, err := New(path)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	h.Add("user", "msg1")
+	h.Add("user", "msg2")
+
+	// Trim with count=0 (clear all)
+	if err := h.TrimToSize(0); err != nil {
+		t.Fatalf("TrimToSize(0) error: %v", err)
+	}
+
+	msgs := h.GetAll()
+	if len(msgs) != 0 {
+		t.Errorf("After TrimToSize(0), len = %d, want 0", len(msgs))
+	}
+
+	h.Add("user", "msg1")
+	h.Add("user", "msg2")
+
+	// Trim with count > current size (no change)
+	if err := h.TrimToSize(100); err != nil {
+		t.Fatalf("TrimToSize(100) error: %v", err)
+	}
+
+	msgs = h.GetAll()
+	if len(msgs) != 2 {
+		t.Errorf("After TrimToSize(100), len = %d, want 2", len(msgs))
+	}
+}
