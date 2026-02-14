@@ -48,7 +48,12 @@ func NewMembers(workDir string) *Members {
 		parsed := ParseMemberTable(string(data))
 		for _, pm := range parsed {
 			key := strings.ToLower(pm.Name)
-			if _, exists := m.members[key]; !exists {
+			if existing, exists := m.members[key]; exists {
+				// If existing FullName looks like a short name, use FullName from CLAUDE.md
+				if existing.FullName == existing.Name || existing.FullName == key {
+					existing.FullName = pm.FullName
+				}
+			} else {
 				m.members[key] = pm
 			}
 		}
@@ -60,11 +65,15 @@ func NewMembers(workDir string) *Members {
 		parsed := ParseMemberTable(string(data))
 		for _, pm := range parsed {
 			key := strings.ToLower(pm.Name)
-			if _, exists := m.members[key]; !exists {
+			if existing, exists := m.members[key]; exists {
+				// If existing FullName looks like a short name, use FullName from CLAUDE.md
+				if existing.FullName == existing.Name || existing.FullName == key {
+					existing.FullName = pm.FullName
+				}
+			} else {
 				// New member from CLAUDE.md
 				m.members[key] = pm
 			}
-			// Note: config.yaml takes priority, so we don't overwrite existing
 		}
 	}
 
