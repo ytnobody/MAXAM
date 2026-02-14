@@ -136,6 +136,16 @@ func (s *AgentState) Resume() {
 	}
 }
 
+// ForceStop immediately sets state to stopped regardless of current state
+func (s *AgentState) ForceStop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state = StateStopped
+	s.stopRequested = false
+	s.currentTask = ""
+	s.startedAt = time.Time{}
+}
+
 // GetStatus returns a human-readable status message
 func (s *AgentState) GetStatus() string {
 	s.mu.RLock()

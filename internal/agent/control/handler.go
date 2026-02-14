@@ -44,6 +44,8 @@ func (h *Handler) Handle(input string) *Result {
 		return h.handleStopAll()
 	case CommandResumeAll:
 		return h.handleResumeAll()
+	case CommandKill:
+		return h.handleKill(cmd.Target)
 	default:
 		return &Result{Success: false, Message: "不明なコマンドです"}
 	}
@@ -70,15 +72,24 @@ func (h *Handler) handleStop(target string) *Result {
 }
 
 // handleResume handles a resume command for a specific agent
+// If the agent was killed (context canceled), it will be restarted
 func (h *Handler) handleResume(target string) *Result {
 	// Case-insensitive agent name lookup
 	targetLower := strings.ToLower(target)
 	for _, name := range h.pool.All() {
 		if strings.ToLower(name) == targetLower {
+			// Try regular resume first
 			if h.pool.Resume(name) {
 				return &Result{
 					Success: true,
 					Message: fmt.Sprintf("%s を再開しました", name),
+				}
+			}
+			// If resume failed, try restart (for killed agents)
+			if h.pool.Restart(name) {
+				return &Result{
+					Success: true,
+					Message: fmt.Sprintf("%s を再起動しました", name),
 				}
 			}
 		}
@@ -104,6 +115,26 @@ func (h *Handler) handleResumeAll() *Result {
 	return &Result{
 		Success: true,
 		Message: "全エージェントを再開しました",
+	}
+}
+
+// handleKill handles a kill command for a specific agent
+func (h *Handler) handleKill(target string) *Result {
+	// Case-insensitive agent name lookup
+	targetLower := strings.ToLower(target)
+	for _, name := range h.pool.All() {
+		if strings.ToLower(name) == targetLower {
+			if h.pool.Kill(name) {
+				return &Result{
+					Success: true,
+					Message: fmt.Sprintf("⚠️ %s を強制終了しました。再起動するには @%s resume を実行してください。", name, name),
+				}
+			}
+		}
+	}
+	return &Result{
+		Success: false,
+		Message: fmt.Sprintf("エージェント '%s' が見つかりません", target),
 	}
 }
 
