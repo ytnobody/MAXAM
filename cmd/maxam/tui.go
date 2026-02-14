@@ -1633,7 +1633,8 @@ func (m *tuiModel) buildPrompt(agentName, input string) string {
 	sb.WriteString("- 作業前に計画を説明し、OKをもらってから進めてください\n")
 	sb.WriteString("- 短く自然な会話で返答してください\n")
 	sb.WriteString("- 他のメンバーに作業を依頼するときは「@名前」で呼びかけてください\n")
-	sb.WriteString("- 呼びかけられたら、その依頼に応答してください\n\n")
+	sb.WriteString("- 呼びかけられたら、その依頼に応答してください\n")
+	sb.WriteString("- 自分自身にはメンションしない（例: 自分がMeiなら @Mei は使わない）\n\n")
 
 	// Add project context (初回のみフル、以降は要約)
 	if m.projectContext != "" {
