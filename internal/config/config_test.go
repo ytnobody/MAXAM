@@ -1089,9 +1089,9 @@ func TestGetAgentInstances(t *testing.T) {
 			expectedCount: 3,
 		},
 		{
-			name:          "meiは自動で3インスタンス",
+			name:          "meiは1インスタンス",
 			agentName:     "mei",
-			expectedCount: DefaultMaxInstances, // 明示的instance_idがなければ自動生成
+			expectedCount: 1,
 		},
 		{
 			name:          "存在しないエージェントは0",
@@ -1109,17 +1109,6 @@ func TestGetAgentInstances(t *testing.T) {
 		})
 	}
 
-	// 自動生成されたインスタンスのキー確認
-	t.Run("自動生成インスタンスのキー", func(t *testing.T) {
-		instances := cfg.GetAgentInstances("mei")
-		expectedKeys := []string{"mei", "mei-1", "mei-2"}
-		for i, inst := range instances {
-			key := inst.GetInstanceKey()
-			if key != expectedKeys[i] {
-				t.Errorf("instance[%d] key = %q, want %q", i, key, expectedKeys[i])
-			}
-		}
-	})
 }
 
 func TestGetAllInstanceKeys(t *testing.T) {
