@@ -22,13 +22,34 @@ func TestLoadDefaultTeam(t *testing.T) {
 		t.Fatalf("failed to create .maxam dir: %v", err)
 	}
 
-	t.Run("no default-team.yaml", func(t *testing.T) {
+	t.Run("no default-team.yaml returns error", func(t *testing.T) {
 		cfg, err := loadDefaultTeam()
 		if err == nil {
 			t.Error("expected error when no default-team.yaml exists")
 		}
 		if cfg != nil {
 			t.Error("expected nil config when file doesn't exist")
+		}
+	})
+
+	t.Run("fallback to builtin when no default-team.yaml", func(t *testing.T) {
+		// This simulates the actual init behavior
+		cfg, err := loadDefaultTeam()
+		if err != nil {
+			// Expected: no user-defined default team, use built-in
+			cfg = config.BuiltinDefaultTeam()
+		}
+
+		if cfg == nil {
+			t.Fatal("expected builtin team config")
+		}
+
+		if len(cfg.Agents) != 6 {
+			t.Errorf("expected 6 agents from builtin team, got %d", len(cfg.Agents))
+		}
+
+		if cfg.TeamName != "MAXAM" {
+			t.Errorf("expected team name 'MAXAM', got '%s'", cfg.TeamName)
 		}
 	})
 
@@ -114,16 +135,16 @@ func TestInitProjectCreation(t *testing.T) {
 		}
 	})
 
-	t.Run("init with default team loads agents", func(t *testing.T) {
+	t.Run("init with user default-team.yaml takes priority", func(t *testing.T) {
 		tempProject2 := t.TempDir()
 
-		// Create default-team.yaml
+		// Create user-defined default-team.yaml
 		defaultTeam := &config.Config{
 			Version:  "1",
-			TeamName: "Default Team",
+			TeamName: "Custom Team",
 			Agents: []config.AgentConfig{
-				{Name: "mei", FullName: "Mei Chen", Role: "PM"},
-				{Name: "yuki", FullName: "Yuki Tanaka", Role: "Backend"},
+				{Name: "alice", FullName: "Alice Smith", Role: "Developer"},
+				{Name: "bob", FullName: "Bob Jones", Role: "Reviewer"},
 			},
 		}
 
@@ -141,10 +162,19 @@ func TestInitProjectCreation(t *testing.T) {
 			t.Fatalf("failed to initialize project: %v", err)
 		}
 
-		// Load default team and apply
+		// Load default team (should use user-defined, not built-in)
 		team, err := loadDefaultTeam()
 		if err != nil {
 			t.Fatalf("failed to load default team: %v", err)
+		}
+
+		// User-defined team should take priority
+		if team.TeamName != "Custom Team" {
+			t.Errorf("expected 'Custom Team' from user config, got '%s'", team.TeamName)
+		}
+
+		if len(team.Agents) != 2 {
+			t.Errorf("expected 2 agents from user config, got %d", len(team.Agents))
 		}
 
 		projectCfg, err := config.LoadProjectConfig(tempProject2)
@@ -159,7 +189,7 @@ func TestInitProjectCreation(t *testing.T) {
 			t.Fatalf("failed to save project config: %v", err)
 		}
 
-		// Verify agents are saved
+		// Verify user-defined agents are saved
 		savedCfg, err := config.LoadProjectConfig(tempProject2)
 		if err != nil {
 			t.Fatalf("failed to load saved config: %v", err)
@@ -169,8 +199,52 @@ func TestInitProjectCreation(t *testing.T) {
 			t.Errorf("expected 2 agents, got %d", len(savedCfg.Agents))
 		}
 
-		if savedCfg.TeamName != "Default Team" {
-			t.Errorf("expected team name 'Default Team', got '%s'", savedCfg.TeamName)
+		if savedCfg.TeamName != "Custom Team" {
+			t.Errorf("expected team name 'Custom Team', got '%s'", savedCfg.TeamName)
+		}
+	})
+
+	t.Run("init with builtin team when no user config", func(t *testing.T) {
+		tempProject3 := t.TempDir()
+
+		// Remove user-defined default-team.yaml
+		os.Remove(filepath.Join(maxamDir, "default-team.yaml"))
+
+		// Initialize project
+		if err := config.EnsureProjectInitialized(tempProject3); err != nil {
+			t.Fatalf("failed to initialize project: %v", err)
+		}
+
+		// Load default team (should fall back to built-in)
+		team, err := loadDefaultTeam()
+		if err != nil {
+			team = config.BuiltinDefaultTeam()
+		}
+
+		projectCfg, err := config.LoadProjectConfig(tempProject3)
+		if err != nil {
+			t.Fatalf("failed to load project config: %v", err)
+		}
+
+		projectCfg.Agents = team.Agents
+		projectCfg.TeamName = team.TeamName
+
+		if err := config.SaveToProject(tempProject3, projectCfg); err != nil {
+			t.Fatalf("failed to save project config: %v", err)
+		}
+
+		// Verify builtin agents are saved
+		savedCfg, err := config.LoadProjectConfig(tempProject3)
+		if err != nil {
+			t.Fatalf("failed to load saved config: %v", err)
+		}
+
+		if len(savedCfg.Agents) != 6 {
+			t.Errorf("expected 6 agents from builtin, got %d", len(savedCfg.Agents))
+		}
+
+		if savedCfg.TeamName != "MAXAM" {
+			t.Errorf("expected team name 'MAXAM' from builtin, got '%s'", savedCfg.TeamName)
 		}
 	})
 }
