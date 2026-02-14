@@ -49,8 +49,8 @@ func NewMembers(workDir string) *Members {
 		for _, pm := range parsed {
 			key := strings.ToLower(pm.Name)
 			if existing, exists := m.members[key]; exists {
-				// If existing FullName looks like a short name, use FullName from CLAUDE.md
-				if existing.FullName == existing.Name || existing.FullName == key {
+				// Only use FullName from CLAUDE.md if config.yaml didn't provide one
+				if existing.FullName == "" {
 					existing.FullName = pm.FullName
 				}
 			} else {
@@ -66,8 +66,8 @@ func NewMembers(workDir string) *Members {
 		for _, pm := range parsed {
 			key := strings.ToLower(pm.Name)
 			if existing, exists := m.members[key]; exists {
-				// If existing FullName looks like a short name, use FullName from CLAUDE.md
-				if existing.FullName == existing.Name || existing.FullName == key {
+				// Only use FullName from CLAUDE.md if config.yaml didn't provide one
+				if existing.FullName == "" {
 					existing.FullName = pm.FullName
 				}
 			} else {
