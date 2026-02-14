@@ -9,11 +9,11 @@ func TestDetectMentions(t *testing.T) {
 	// Create members with test data
 	m := &Members{
 		members: map[string]*Member{
-			"mei":    {Name: "mei", FullName: "Mei Chen", Role: "PM"},
-			"yuki":   {Name: "yuki", FullName: "Yuki Tanaka", Role: "Backend"},
-			"priya":  {Name: "priya", FullName: "Priya Sharma", Role: "QA"},
-			"alex":   {Name: "alex", FullName: "Alex Johnson", Role: "Frontend"},
-			"hana":   {Name: "hana", FullName: "Hana Kim", Role: "Designer"},
+			"mei":   {Name: "mei", FullName: "Mei Chen", Role: "PM"},
+			"yuki":  {Name: "yuki", FullName: "Yuki Tanaka", Role: "Backend"},
+			"priya": {Name: "priya", FullName: "Priya Sharma", Role: "QA"},
+			"alex":  {Name: "alex", FullName: "Alex Johnson", Role: "Frontend"},
+			"hana":  {Name: "hana", FullName: "Hana Kim", Role: "Designer"},
 		},
 	}
 
@@ -91,10 +91,10 @@ func TestDetectMention(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		text    string
-		def     string
-		want    string
+		name string
+		text string
+		def  string
+		want string
 	}{
 		{
 			name: "with mention",

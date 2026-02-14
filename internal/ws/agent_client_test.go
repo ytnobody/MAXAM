@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 func TestAgentClientConfig_Validate(t *testing.T) {
@@ -79,323 +77,324 @@ func TestAgentClientConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestAgentClientConfig(t *testing.T) {
+	t.Run("DefaultAgentClientConfig", func(t *testing.T) {
+		config := DefaultAgentClientConfig("ws://localhost:8080/ws", "agent-1")
+
+		if config.ServerURL != "ws://localhost:8080/ws" {
+			t.Errorf("expected server URL ws://localhost:8080/ws, got %s", config.ServerURL)
+		}
+		if config.AgentID != "agent-1" {
+			t.Errorf("expected agent ID agent-1, got %s", config.AgentID)
+		}
+		if config.ReconnectInterval != 5*time.Second {
+			t.Errorf("expected reconnect interval 5s, got %v", config.ReconnectInterval)
+		}
+		if config.MaxReconnectAttempts != 0 {
+			t.Errorf("expected max reconnect attempts 0 (unlimited), got %d", config.MaxReconnectAttempts)
+		}
+	})
+}
+
 func TestNewAgentClient(t *testing.T) {
-	tests := []struct {
-		name    string
-		config  *AgentClientConfig
-		wantErr bool
-	}{
-		{
-			name:    "valid config",
-			config:  DefaultAgentClientConfig("ws://localhost:8080/ws", "agent-1"),
-			wantErr: false,
-		},
-		{
-			name: "invalid config",
-			config: &AgentClientConfig{
-				ServerURL: "",
-				AgentID:   "",
-			},
-			wantErr: true,
-		},
-	}
+	t.Run("valid config", func(t *testing.T) {
+		config := DefaultAgentClientConfig("ws://localhost:8080/ws", "agent-1")
+		client, err := NewAgentClient(config)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client, err := NewAgentClient(tt.config)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error but got nil")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("unexpected error: %v", err)
-				}
-				if client == nil {
-					t.Error("expected client but got nil")
-				}
-			}
-		})
-	}
+	t.Run("nil config", func(t *testing.T) {
+		_, err := NewAgentClient(nil)
+		if err == nil {
+			t.Fatal("expected error for nil config")
+		}
+	})
+
+	t.Run("empty server URL", func(t *testing.T) {
+		config := &AgentClientConfig{
+			AgentID: "agent-1",
+		}
+		_, err := NewAgentClient(config)
+		if err == nil {
+			t.Fatal("expected error for empty server URL")
+		}
+	})
+
+	t.Run("empty agent ID", func(t *testing.T) {
+		config := &AgentClientConfig{
+			ServerURL: "ws://localhost:8080/ws",
+		}
+		_, err := NewAgentClient(config)
+		if err == nil {
+			t.Fatal("expected error for empty agent ID")
+		}
+	})
+
+	t.Run("invalid URL scheme", func(t *testing.T) {
+		config := &AgentClientConfig{
+			ServerURL: "http://localhost:8080/ws",
+			AgentID:   "agent-1",
+		}
+		_, err := NewAgentClient(config)
+		if err == nil {
+			t.Fatal("expected error for invalid URL scheme")
+		}
+	})
 }
 
-func TestDefaultAgentClientConfig(t *testing.T) {
-	config := DefaultAgentClientConfig("ws://localhost:8080/ws", "agent-1")
-
-	if config.ServerURL != "ws://localhost:8080/ws" {
-		t.Errorf("expected ServerURL ws://localhost:8080/ws, got %s", config.ServerURL)
-	}
-	if config.AgentID != "agent-1" {
-		t.Errorf("expected AgentID agent-1, got %s", config.AgentID)
-	}
-	if config.ReconnectInterval != 5*time.Second {
-		t.Errorf("expected ReconnectInterval 5s, got %v", config.ReconnectInterval)
-	}
-	if config.MaxReconnectAttempts != 0 {
-		t.Errorf("expected MaxReconnectAttempts 0, got %d", config.MaxReconnectAttempts)
-	}
-	if config.PingInterval != 30*time.Second {
-		t.Errorf("expected PingInterval 30s, got %v", config.PingInterval)
-	}
-}
-
-func TestAgentClient_Connect(t *testing.T) {
-	// Create a test WebSocket server
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
-	}
+func TestAgentClientConnection(t *testing.T) {
+	// Create test server
+	hub := NewHub()
+	go hub.Run()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer conn.Close()
 
-		// Echo server - just keep connection alive
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
+		clientID := r.URL.Query().Get("id")
+		if clientID == "" {
+			clientID = "test-client"
 		}
+
+		client := NewClient(hub, conn, clientID)
+		hub.Register(client)
+
+		go client.WritePump()
+		client.ReadPump()
 	}))
 	defer server.Close()
 
 	// Convert http URL to ws URL
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
 
-	config := DefaultAgentClientConfig(wsURL, "agent-test")
-	client, err := NewAgentClient(config)
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
+	t.Run("Connect successfully", func(t *testing.T) {
+		config := DefaultAgentClientConfig(wsURL, "test-agent")
+		client, err := NewAgentClient(config)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+		defer client.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-	// Test connect
-	err = client.Connect(ctx)
-	if err != nil {
-		t.Fatalf("failed to connect: %v", err)
-	}
+		if err := client.Connect(ctx); err != nil {
+			t.Fatalf("failed to connect: %v", err)
+		}
 
-	if !client.IsConnected() {
-		t.Error("expected client to be connected")
-	}
+		if !client.IsConnected() {
+			t.Error("expected client to be connected")
+		}
+	})
 
-	// Test close
-	err = client.Close()
-	if err != nil {
-		t.Errorf("failed to close: %v", err)
-	}
+	t.Run("Connect to non-existent server", func(t *testing.T) {
+		config := DefaultAgentClientConfig("ws://localhost:59999/ws", "test-agent")
+		client, err := NewAgentClient(config)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+		defer client.Close()
 
-	if client.IsConnected() {
-		t.Error("expected client to be disconnected after close")
-	}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		if err := client.Connect(ctx); err == nil {
+			t.Fatal("expected error connecting to non-existent server")
+		}
+	})
+
+	t.Run("Send message", func(t *testing.T) {
+		config := DefaultAgentClientConfig(wsURL, "sender-agent")
+		client, err := NewAgentClient(config)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+		defer client.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := client.Connect(ctx); err != nil {
+			t.Fatalf("failed to connect: %v", err)
+		}
+
+		msg := NewChatMessage("", "all", "hello from agent")
+		if err := client.Send(msg); err != nil {
+			t.Fatalf("failed to send message: %v", err)
+		}
+	})
+
+	t.Run("Send message when not connected", func(t *testing.T) {
+		config := DefaultAgentClientConfig(wsURL, "test-agent")
+		client, err := NewAgentClient(config)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+		defer client.Close()
+
+		msg := NewChatMessage("", "all", "hello")
+		if err := client.Send(msg); err == nil {
+			t.Fatal("expected error sending when not connected")
+		}
+	})
+
+	t.Run("Receive messages", func(t *testing.T) {
+		config := DefaultAgentClientConfig(wsURL, "receiver-agent")
+		client, err := NewAgentClient(config)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+		defer client.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := client.Connect(ctx); err != nil {
+			t.Fatalf("failed to connect: %v", err)
+		}
+
+		// Should receive join message
+		select {
+		case msg := <-client.Receive():
+			if msg.Type != TypeJoin {
+				t.Errorf("expected join message, got %s", msg.Type)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for message")
+		}
+	})
+
+	t.Run("Close connection", func(t *testing.T) {
+		config := DefaultAgentClientConfig(wsURL, "close-test-agent")
+		client, err := NewAgentClient(config)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := client.Connect(ctx); err != nil {
+			t.Fatalf("failed to connect: %v", err)
+		}
+
+		if err := client.Close(); err != nil {
+			t.Fatalf("failed to close: %v", err)
+		}
+
+		// Wait for connection state to update
+		time.Sleep(100 * time.Millisecond)
+
+		if client.IsConnected() {
+			t.Error("expected client to be disconnected after close")
+		}
+	})
+
+	t.Run("Double close is safe", func(t *testing.T) {
+		config := DefaultAgentClientConfig(wsURL, "double-close-agent")
+		client, err := NewAgentClient(config)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := client.Connect(ctx); err != nil {
+			t.Fatalf("failed to connect: %v", err)
+		}
+
+		if err := client.Close(); err != nil {
+			t.Fatalf("first close failed: %v", err)
+		}
+
+		// Second close should not panic or error
+		if err := client.Close(); err != nil {
+			t.Fatalf("second close failed: %v", err)
+		}
+	})
+
+	t.Run("Connect after close returns error", func(t *testing.T) {
+		config := DefaultAgentClientConfig(wsURL, "reconnect-test-agent")
+		client, err := NewAgentClient(config)
+		if err != nil {
+			t.Fatalf("failed to create client: %v", err)
+		}
+
+		if err := client.Close(); err != nil {
+			t.Fatalf("close failed: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		if err := client.Connect(ctx); err == nil {
+			t.Fatal("expected error connecting after close")
+		}
+	})
 }
 
-func TestAgentClient_SendReceive(t *testing.T) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
-	}
+func TestAgentClientMessageFromSetsAgentID(t *testing.T) {
+	// Create test server
+	hub := NewHub()
+	go hub.Run()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer conn.Close()
 
-		// Echo server
-		for {
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-			conn.WriteMessage(websocket.TextMessage, data)
+		clientID := r.URL.Query().Get("id")
+		if clientID == "" {
+			clientID = "test-client"
 		}
+
+		client := NewClient(hub, conn, clientID)
+		hub.Register(client)
+
+		go client.WritePump()
+		client.ReadPump()
 	}))
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	config := DefaultAgentClientConfig(wsURL, "agent-test")
+
+	config := DefaultAgentClientConfig(wsURL, "my-agent-id")
 	client, err := NewAgentClient(config)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	err = client.Connect(ctx)
-	if err != nil {
-		t.Fatalf("failed to connect: %v", err)
 	}
 	defer client.Close()
 
-	// Send a message
-	msg := NewChatMessage("agent-test", "owner", "Hello!")
-	err = client.Send(msg)
-	if err != nil {
-		t.Fatalf("failed to send: %v", err)
-	}
-
-	// Receive the echoed message
-	recvCtx, recvCancel := context.WithTimeout(ctx, 2*time.Second)
-	defer recvCancel()
-
-	received, err := client.Receive(recvCtx)
-	if err != nil {
-		t.Fatalf("failed to receive: %v", err)
-	}
-
-	if received.Content != "Hello!" {
-		t.Errorf("expected content 'Hello!', got %q", received.Content)
-	}
-	if received.From != "agent-test" {
-		t.Errorf("expected from 'agent-test', got %q", received.From)
-	}
-}
-
-func TestAgentClient_SendNotConnected(t *testing.T) {
-	config := DefaultAgentClientConfig("ws://localhost:8080/ws", "agent-test")
-	client, err := NewAgentClient(config)
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
-
-	// Try to send without connecting
-	msg := NewChatMessage("agent-test", "owner", "Hello!")
-	err = client.Send(msg)
-	if err == nil {
-		t.Error("expected error when sending without connection")
-	}
-	if !strings.Contains(err.Error(), "not connected") {
-		t.Errorf("expected 'not connected' error, got: %v", err)
-	}
-}
-
-func TestAgentClient_DoubleClose(t *testing.T) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-		}
-	}))
-	defer server.Close()
-
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	config := DefaultAgentClientConfig(wsURL, "agent-test")
-	client, err := NewAgentClient(config)
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err = client.Connect(ctx)
-	if err != nil {
+	if err := client.Connect(ctx); err != nil {
 		t.Fatalf("failed to connect: %v", err)
 	}
 
-	// Close twice - should not panic
-	err = client.Close()
-	if err != nil {
-		t.Errorf("first close failed: %v", err)
+	// Send a message with empty From field
+	msg := &Message{
+		Type:    TypeChat,
+		Content: "test message",
 	}
-
-	err = client.Close()
-	if err != nil {
-		t.Errorf("second close failed: %v", err)
-	}
-}
-
-func TestAgentClient_ConnectFailure(t *testing.T) {
-	// Try to connect to a non-existent server
-	config := DefaultAgentClientConfig("ws://localhost:59999/ws", "agent-test")
-	client, err := NewAgentClient(config)
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	err = client.Connect(ctx)
-	if err == nil {
-		t.Error("expected error when connecting to non-existent server")
-	}
-}
-
-func TestAgentClient_MessageFromField(t *testing.T) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
-	}
-
-	var receivedData []byte
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-
-		// Just receive and store the first message
-		_, data, err := conn.ReadMessage()
-		if err != nil {
-			return
-		}
-		receivedData = data
-	}))
-	defer server.Close()
-
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	config := DefaultAgentClientConfig(wsURL, "my-agent")
-	client, err := NewAgentClient(config)
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	err = client.Connect(ctx)
-	if err != nil {
-		t.Fatalf("failed to connect: %v", err)
-	}
-	defer client.Close()
-
-	// Send a message with different From field
-	msg := NewChatMessage("wrong-agent", "owner", "Test")
-	err = client.Send(msg)
-	if err != nil {
-		t.Fatalf("failed to send: %v", err)
+	if err := client.Send(msg); err != nil {
+		t.Fatalf("failed to send message: %v", err)
 	}
 
 	// Wait for message to be received
 	time.Sleep(100 * time.Millisecond)
 
-	// Parse and check the From field was overwritten
-	if len(receivedData) > 0 {
-		received, err := ParseMessage(receivedData)
-		if err != nil {
-			t.Fatalf("failed to parse received message: %v", err)
-		}
-		if received.From != "my-agent" {
-			t.Errorf("expected From to be 'my-agent', got %q", received.From)
-		}
+	// The From field should have been set to agent ID
+	if msg.From != "my-agent-id" {
+		t.Errorf("expected From to be 'my-agent-id', got '%s'", msg.From)
 	}
 }

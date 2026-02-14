@@ -1,4 +1,4 @@
-// Package ws provides WebSocket functionality for MAXAM
+// Package ws provides WebSocket server and client functionality for MAXAM chat
 package ws
 
 import (
@@ -12,40 +12,41 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// AgentClient interface defines the WebSocket client for agents
+// AgentClient interface for WebSocket client used by agents
 type AgentClient interface {
+	// Connect establishes a WebSocket connection to the server
 	Connect(ctx context.Context) error
-	Close() error
+	// ConnectWithReconnect connects and automatically reconnects on disconnection
+	ConnectWithReconnect(ctx context.Context) error
+	// Send sends a message to the server
 	Send(msg *Message) error
-	Receive(ctx context.Context) (*Message, error)
+	// Receive returns a channel for receiving messages
+	Receive() <-chan *Message
+	// Close closes the connection
+	Close() error
+	// IsConnected returns true if the client is currently connected
 	IsConnected() bool
 }
 
-// AgentClientConfig holds configuration for the agent WebSocket client
+// AgentClientConfig holds configuration for the agent client
 type AgentClientConfig struct {
 	// ServerURL is the WebSocket server URL (e.g., "ws://localhost:8080/ws")
 	ServerURL string
-
-	// AgentID identifies this agent
+	// AgentID is the unique identifier for this agent
 	AgentID string
-
-	// ReconnectInterval is the time to wait between reconnection attempts
+	// ReconnectInterval is the time to wait before reconnecting
 	ReconnectInterval time.Duration
-
 	// MaxReconnectAttempts is the maximum number of reconnection attempts (0 = unlimited)
 	MaxReconnectAttempts int
-
 	// PingInterval is the interval for sending ping messages
 	PingInterval time.Duration
-
 	// WriteTimeout is the timeout for write operations
 	WriteTimeout time.Duration
-
 	// ReadTimeout is the timeout for read operations
 	ReadTimeout time.Duration
 }
 
-// DefaultAgentClientConfig returns a default configuration
+// DefaultAgentClientConfig returns a config with sensible defaults
 func DefaultAgentClientConfig(serverURL, agentID string) *AgentClientConfig {
 	return &AgentClientConfig{
 		ServerURL:            serverURL,
@@ -79,192 +80,171 @@ func (c *AgentClientConfig) Validate() error {
 	return nil
 }
 
-// agentClientImpl is the concrete implementation of AgentClient
-type agentClientImpl struct {
+// agentClient implements AgentClient
+type agentClient struct {
 	config    *AgentClientConfig
 	conn      *websocket.Conn
 	mu        sync.RWMutex
-	connected bool
+	receive   chan *Message
 	done      chan struct{}
-	sendCh    chan *Message
-	recvCh    chan *Message
-	errCh     chan error
+	connected bool
+	closed    bool
 }
 
 // NewAgentClient creates a new agent WebSocket client
 func NewAgentClient(config *AgentClientConfig) (AgentClient, error) {
+	if config == nil {
+		return nil, errors.New("config is required")
+	}
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 
-	return &agentClientImpl{
-		config: config,
-		done:   make(chan struct{}),
-		sendCh: make(chan *Message, 256),
-		recvCh: make(chan *Message, 256),
-		errCh:  make(chan error, 1),
+	return &agentClient{
+		config:  config,
+		receive: make(chan *Message, 256),
+		done:    make(chan struct{}),
 	}, nil
 }
 
 // Connect establishes a WebSocket connection to the server
-func (c *agentClientImpl) Connect(ctx context.Context) error {
+func (c *agentClient) Connect(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.connected {
-		return nil
+	if c.closed {
+		c.mu.Unlock()
+		return errors.New("client is closed")
 	}
+	c.mu.Unlock()
 
-	// Add agent ID as query parameter
-	u, _ := url.Parse(c.config.ServerURL)
+	// Build URL with agent ID
+	u, err := url.Parse(c.config.ServerURL)
+	if err != nil {
+		return fmt.Errorf("invalid server URL: %w", err)
+	}
 	q := u.Query()
 	q.Set("id", c.config.AgentID)
 	u.RawQuery = q.Encode()
 
+	// Dial with context
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
 
 	conn, _, err := dialer.DialContext(ctx, u.String(), nil)
 	if err != nil {
-		return fmt.Errorf("failed to connect to WebSocket server: %w", err)
+		return fmt.Errorf("failed to connect: %w", err)
 	}
 
+	c.mu.Lock()
 	c.conn = conn
 	c.connected = true
-	c.done = make(chan struct{})
+	c.mu.Unlock()
 
 	// Start read/write pumps
-	go c.readPump()
-	go c.writePump()
-	go c.pingPump()
+	go c.readPump(ctx)
+	go c.pingPump(ctx)
 
 	return nil
 }
 
-// ConnectWithReconnect connects and automatically reconnects on disconnection
-func (c *agentClientImpl) ConnectWithReconnect(ctx context.Context) error {
-	err := c.Connect(ctx)
-	if err != nil {
-		return err
-	}
-
-	go c.reconnectLoop(ctx)
-	return nil
-}
-
-func (c *agentClientImpl) reconnectLoop(ctx context.Context) {
-	attempts := 0
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case err := <-c.errCh:
-			if err == nil {
-				continue
-			}
-
-			c.mu.Lock()
-			c.connected = false
-			c.mu.Unlock()
-
-			attempts++
-			if c.config.MaxReconnectAttempts > 0 && attempts >= c.config.MaxReconnectAttempts {
-				return
-			}
-
-			time.Sleep(c.config.ReconnectInterval)
-
-			if err := c.Connect(ctx); err != nil {
-				continue
-			}
-			attempts = 0
-		}
-	}
-}
-
-// Close closes the WebSocket connection
-func (c *agentClientImpl) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if !c.connected {
-		return nil
-	}
-
-	c.connected = false
-	close(c.done)
-
-	if c.conn != nil {
-		return c.conn.Close()
-	}
-	return nil
-}
-
-// Send sends a message through the WebSocket connection
-func (c *agentClientImpl) Send(msg *Message) error {
+// Send sends a message to the server
+func (c *agentClient) Send(msg *Message) error {
 	c.mu.RLock()
-	connected := c.connected
-	c.mu.RUnlock()
-
-	if !connected {
+	if !c.connected || c.conn == nil {
+		c.mu.RUnlock()
 		return errors.New("not connected")
 	}
+	conn := c.conn
+	c.mu.RUnlock()
 
-	// Ensure From is set to this agent's ID
+	// Set sender to agent ID
 	msg.From = c.config.AgentID
 	if msg.Timestamp.IsZero() {
 		msg.Timestamp = time.Now()
 	}
 
-	select {
-	case c.sendCh <- msg:
+	data, err := msg.ToJSON()
+	if err != nil {
+		return fmt.Errorf("failed to serialize message: %w", err)
+	}
+
+	conn.SetWriteDeadline(time.Now().Add(c.config.WriteTimeout))
+	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		return fmt.Errorf("failed to send message: %w", err)
+	}
+
+	return nil
+}
+
+// Receive returns a channel for receiving messages
+func (c *agentClient) Receive() <-chan *Message {
+	return c.receive
+}
+
+// Close closes the connection
+func (c *agentClient) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
 		return nil
-	default:
-		return errors.New("send buffer full")
 	}
+
+	c.closed = true
+	c.connected = false
+	close(c.done)
+
+	if c.conn != nil {
+		// Send close message
+		c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		return c.conn.Close()
+	}
+
+	return nil
 }
 
-// Receive receives a message from the WebSocket connection
-func (c *agentClientImpl) Receive(ctx context.Context) (*Message, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case msg := <-c.recvCh:
-		return msg, nil
-	}
-}
-
-// IsConnected returns whether the client is currently connected
-func (c *agentClientImpl) IsConnected() bool {
+// IsConnected returns true if the client is currently connected
+func (c *agentClient) IsConnected() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.connected
 }
 
-func (c *agentClientImpl) readPump() {
+// readPump reads messages from the WebSocket connection
+func (c *agentClient) readPump(ctx context.Context) {
 	defer func() {
-		c.errCh <- errors.New("read pump stopped")
+		c.mu.Lock()
+		c.connected = false
+		if c.conn != nil {
+			c.conn.Close()
+		}
+		c.mu.Unlock()
 	}()
 
-	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(c.config.ReadTimeout))
-	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(c.config.ReadTimeout))
+	c.mu.RLock()
+	conn := c.conn
+	c.mu.RUnlock()
+
+	conn.SetReadLimit(maxMessageSize)
+	conn.SetReadDeadline(time.Now().Add(c.config.ReadTimeout))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(c.config.ReadTimeout))
 		return nil
 	})
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-c.done:
 			return
 		default:
 		}
 
-		_, data, err := c.conn.ReadMessage()
+		_, data, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				c.errCh <- err
+				// Could log here if needed
 			}
 			return
 		}
@@ -275,46 +255,120 @@ func (c *agentClientImpl) readPump() {
 		}
 
 		select {
-		case c.recvCh <- msg:
+		case c.receive <- msg:
 		default:
-			// Receive buffer full, drop message
+			// Buffer full, drop message
 		}
 	}
 }
 
-func (c *agentClientImpl) writePump() {
+// pingPump sends periodic ping messages to keep the connection alive
+func (c *agentClient) pingPump(ctx context.Context) {
+	ticker := time.NewTicker(c.config.PingInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-c.done:
 			return
-		case msg := <-c.sendCh:
-			c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteTimeout))
+		case <-ticker.C:
+			c.mu.RLock()
+			conn := c.conn
+			connected := c.connected
+			c.mu.RUnlock()
 
-			data, err := msg.ToJSON()
-			if err != nil {
-				continue
+			if !connected || conn == nil {
+				return
 			}
 
-			if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-				c.errCh <- err
+			conn.SetWriteDeadline(time.Now().Add(c.config.WriteTimeout))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		}
 	}
 }
 
-func (c *agentClientImpl) pingPump() {
-	ticker := time.NewTicker(c.config.PingInterval)
+// ConnectWithReconnect connects to the server and automatically reconnects on disconnection
+func (c *agentClient) ConnectWithReconnect(ctx context.Context) error {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return errors.New("client is closed")
+	}
+	c.mu.Unlock()
+
+	// Initial connection
+	if err := c.Connect(ctx); err != nil {
+		// Start reconnection loop in background
+		go c.reconnectLoop(ctx)
+		return err
+	}
+
+	// Monitor connection and reconnect if needed
+	go c.monitorConnection(ctx)
+
+	return nil
+}
+
+// reconnectLoop attempts to reconnect to the server
+func (c *agentClient) reconnectLoop(ctx context.Context) {
+	attempts := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-c.done:
+			return
+		default:
+		}
+
+		// Check if we've exceeded max attempts
+		if c.config.MaxReconnectAttempts > 0 && attempts >= c.config.MaxReconnectAttempts {
+			return
+		}
+
+		// Wait before reconnecting
+		select {
+		case <-ctx.Done():
+			return
+		case <-c.done:
+			return
+		case <-time.After(c.config.ReconnectInterval):
+		}
+
+		attempts++
+
+		// Try to connect
+		if err := c.Connect(ctx); err != nil {
+			continue
+		}
+
+		// Connection successful, reset attempts and start monitoring
+		attempts = 0
+		go c.monitorConnection(ctx)
+		return
+	}
+}
+
+// monitorConnection monitors the connection and triggers reconnection if disconnected
+func (c *agentClient) monitorConnection(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-c.done:
 			return
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteTimeout))
-			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				c.errCh <- err
+			if !c.IsConnected() {
+				// Connection lost, start reconnection
+				go c.reconnectLoop(ctx)
 				return
 			}
 		}
