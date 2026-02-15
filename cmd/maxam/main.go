@@ -46,6 +46,8 @@ func main() {
 		showStatus()
 	case "watch":
 		runWatch()
+	case "pr-status":
+		runPRStatus()
 	case "help":
 		printUsage()
 	default:
@@ -75,6 +77,7 @@ Commands:
   ask <agent> <prompt> Ask a specific agent a question
   analyze              Run Amara's weekly analysis
   watch <owner/repo>   Watch repository for new Issues/PRs
+  pr-status <o/repo>   Show PRs awaiting review
   status               Show team status
   help                 Show this help
 
@@ -91,7 +94,8 @@ Examples:
   maxam review "Create unit tests for the auth module"
   maxam ask yuki "How would you implement caching here?"
   maxam watch ytnobody/MAXAM              # Watch for new Issues/PRs
-  maxam watch ytnobody/MAXAM --interval 30s`)
+  maxam watch ytnobody/MAXAM --interval 30s
+  maxam pr-status ytnobody/MAXAM          # Show PRs awaiting review`)
 }
 
 func getWorkDir() string {

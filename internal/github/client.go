@@ -320,6 +320,93 @@ func (c *Client) GetPRFiles(ctx context.Context, number int) ([]*github.CommitFi
 	return files, nil
 }
 
+// PRReviewStatus represents the review status of a pull request
+type PRReviewStatus string
+
+const (
+	// PRReviewStatusPending means no reviews yet or review requested
+	PRReviewStatusPending PRReviewStatus = "PENDING"
+	// PRReviewStatusApproved means the PR has been approved
+	PRReviewStatusApproved PRReviewStatus = "APPROVED"
+	// PRReviewStatusChangesRequested means changes have been requested
+	PRReviewStatusChangesRequested PRReviewStatus = "CHANGES_REQUESTED"
+)
+
+// PRWithReviewStatus contains a PR and its review status
+type PRWithReviewStatus struct {
+	PR           *github.PullRequest
+	ReviewStatus PRReviewStatus
+}
+
+// GetPRReviewStatus returns the current review status of a PR
+func (c *Client) GetPRReviewStatus(ctx context.Context, number int) (PRReviewStatus, error) {
+	reviews, _, err := c.client.PullRequests.ListReviews(ctx, c.owner, c.repo, number, nil)
+	if err != nil {
+		return PRReviewStatusPending, fmt.Errorf("list PR reviews: %w", err)
+	}
+
+	if len(reviews) == 0 {
+		return PRReviewStatusPending, nil
+	}
+
+	// Find the latest review state (most recent review wins)
+	var latestReview *github.PullRequestReview
+	for _, review := range reviews {
+		state := review.GetState()
+		// Skip COMMENTED and PENDING states as they don't affect approval
+		if state == "APPROVED" || state == "CHANGES_REQUESTED" {
+			if latestReview == nil || review.GetSubmittedAt().After(latestReview.GetSubmittedAt().Time) {
+				latestReview = review
+			}
+		}
+	}
+
+	if latestReview == nil {
+		return PRReviewStatusPending, nil
+	}
+
+	switch latestReview.GetState() {
+	case "APPROVED":
+		return PRReviewStatusApproved, nil
+	case "CHANGES_REQUESTED":
+		return PRReviewStatusChangesRequested, nil
+	default:
+		return PRReviewStatusPending, nil
+	}
+}
+
+// ListPRsAwaitingReview returns PRs that are waiting for review
+// A PR is considered "awaiting review" if:
+// - It has no reviews yet, OR
+// - It has review_requested status (someone was requested to review)
+// PRs with CHANGES_REQUESTED are NOT included (author needs to fix first)
+func (c *Client) ListPRsAwaitingReview(ctx context.Context) ([]*PRWithReviewStatus, error) {
+	// Get all open PRs
+	prs, err := c.ListPRs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var awaitingReview []*PRWithReviewStatus
+	for _, pr := range prs {
+		status, err := c.GetPRReviewStatus(ctx, pr.GetNumber())
+		if err != nil {
+			// Log error but continue with other PRs
+			continue
+		}
+
+		// Only include PRs that are pending review (not approved, not changes requested)
+		if status == PRReviewStatusPending {
+			awaitingReview = append(awaitingReview, &PRWithReviewStatus{
+				PR:           pr,
+				ReviewStatus: status,
+			})
+		}
+	}
+
+	return awaitingReview, nil
+}
+
 // Label operations
 
 // AddLabel adds a label to an issue

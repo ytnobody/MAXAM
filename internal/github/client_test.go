@@ -118,3 +118,48 @@ func TestClient_LabelMethodsExist(t *testing.T) {
 	_ = client.RemoveLabel(ctx, 1, "label")
 	_, _ = client.HasLabel(ctx, 1, "label")
 }
+
+func TestPRReviewStatus_Constants(t *testing.T) {
+	// Verify constants are defined correctly
+	if PRReviewStatusPending != "PENDING" {
+		t.Errorf("PRReviewStatusPending = %q, want %q", PRReviewStatusPending, "PENDING")
+	}
+	if PRReviewStatusApproved != "APPROVED" {
+		t.Errorf("PRReviewStatusApproved = %q, want %q", PRReviewStatusApproved, "APPROVED")
+	}
+	if PRReviewStatusChangesRequested != "CHANGES_REQUESTED" {
+		t.Errorf("PRReviewStatusChangesRequested = %q, want %q", PRReviewStatusChangesRequested, "CHANGES_REQUESTED")
+	}
+}
+
+func TestPRWithReviewStatus_Struct(t *testing.T) {
+	// Verify struct can be created and fields are accessible
+	pr := &gh.PullRequest{
+		Number: ptr(123),
+		Title:  ptr("Test PR"),
+	}
+
+	prStatus := &PRWithReviewStatus{
+		PR:           pr,
+		ReviewStatus: PRReviewStatusPending,
+	}
+
+	if prStatus.PR.GetNumber() != 123 {
+		t.Errorf("PR number = %d, want %d", prStatus.PR.GetNumber(), 123)
+	}
+	if prStatus.ReviewStatus != PRReviewStatusPending {
+		t.Errorf("ReviewStatus = %q, want %q", prStatus.ReviewStatus, PRReviewStatusPending)
+	}
+}
+
+// Integration tests for PR review status would require mocking
+// For now, we test the exported interface exists
+func TestClient_PRReviewMethodsExist(t *testing.T) {
+	client := NewClientWithToken("owner", "repo", "test-token")
+	ctx := context.Background()
+
+	// These tests verify the methods exist and have correct signatures
+	// They will fail with network errors, which is expected
+	_, _ = client.GetPRReviewStatus(ctx, 1)
+	_, _ = client.ListPRsAwaitingReview(ctx)
+}
