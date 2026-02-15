@@ -274,9 +274,9 @@ func TestProcessInfo_TableDriven_History(t *testing.T) {
 	// リングバッファのテーブル駆動テスト
 	tests := []struct {
 		name       string
-		addCount   int  // 追加する履歴の数
-		wantLen    int  // 期待する履歴の長さ
-		wantOldest int  // 期待する最古のインデックス
+		addCount   int // 追加する履歴の数
+		wantLen    int // 期待する履歴の長さ
+		wantOldest int // 期待する最古のインデックス
 	}{
 		{
 			name:       "empty",

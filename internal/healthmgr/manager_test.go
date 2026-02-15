@@ -131,7 +131,7 @@ func TestManager_RecoverAgent_MaxRetriesExceeded(t *testing.T) {
 	m := NewManager(
 		WithRecoveryHandler(handler),
 		WithMaxRetries(2),
-		WithRetryDelay(10 * time.Millisecond), // Short delay for test
+		WithRetryDelay(10*time.Millisecond), // Short delay for test
 	)
 	m.RegisterAgent("test-agent")
 

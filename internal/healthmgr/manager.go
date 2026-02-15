@@ -90,9 +90,9 @@ func (m *Manager) RegisterAgent(agentName string) {
 
 	if _, exists := m.health[agentName]; !exists {
 		m.health[agentName] = &Health{
-			AgentName:     agentName,
-			Status:        HealthStatusHealthy,
-			LastCheckedAt: time.Now(),
+			AgentName:      agentName,
+			Status:         HealthStatusHealthy,
+			LastCheckedAt:  time.Now(),
 			LastResponseAt: time.Now(),
 		}
 		m.recoveryLock[agentName] = &sync.Mutex{}
