@@ -162,6 +162,7 @@ type tuiModel struct {
 	tempInput        string
 	ready            bool
 	processingAgents map[string]bool // 各エージェントの処理状態
+	startTime        time.Time       // TUI起動時刻（初期分析を遅延実行するため）
 	width            int
 	height           int
 
@@ -461,6 +462,7 @@ func initialTuiModel(workDir string) tuiModel {
 		messages:            messages,
 		inputHist:           make([]string, 0),
 		processingAgents:    make(map[string]bool),
+		startTime:           time.Now(), // Record TUI startup time
 		histIdx:             -1,
 		currentView:         viewChat,
 		prWatcher:           prWatcher,
@@ -888,6 +890,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case analysisTickMsg:
 		// 1時間ごとの軽量分析トリガー
 		// Amaraが処理中でなく、直近のメッセージ数が閾値以上の場合のみ実行
+		// ただし、TUI起動後30秒未満は実行しない（初期化直後の不正な状態表示を回避）
+		if time.Since(m.startTime) < 30*time.Second {
+			return m, m.tickAnalysis()
+		}
 		recentMessages := m.getRecentMessages(time.Hour)
 		if !m.processingAgents["amara"] && len(recentMessages) >= m.analysisMinMessages {
 			m.processingAgents["amara"] = true
@@ -1028,6 +1034,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var icon string
 		if msg.recovered {
 			icon = "✅"
+			// Clear processing state when worker recovers (treat as completed)
+			delete(m.processingAgents, msg.workerName)
 			m.messages = append(m.messages, tuiMessage{
 				role:    "system",
 				content: fmt.Sprintf("%s エージェント %s が復帰しました", icon, msg.workerName),
