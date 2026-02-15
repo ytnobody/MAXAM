@@ -81,6 +81,34 @@ func TestParse(t *testing.T) {
 			input:       "let's /plan this",
 			wantCommand: false,
 		},
+		{
+			name:        "/kill command",
+			input:       "/kill",
+			wantCommand: true,
+			wantCmd:     CommandKill,
+			wantArgs:    "",
+		},
+		{
+			name:        "/kill with agent",
+			input:       "/kill @mei",
+			wantCommand: true,
+			wantCmd:     CommandKill,
+			wantArgs:    "@mei",
+		},
+		{
+			name:        "/kill with multiple agents",
+			input:       "/kill @mei @yuki",
+			wantCommand: true,
+			wantCmd:     CommandKill,
+			wantArgs:    "@mei @yuki",
+		},
+		{
+			name:        "/kill all",
+			input:       "/kill all",
+			wantCommand: true,
+			wantCmd:     CommandKill,
+			wantArgs:    "all",
+		},
 	}
 
 	for _, tt := range tests {

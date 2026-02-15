@@ -2250,6 +2250,69 @@ func (m *tuiModel) handleModeCommand(result mode.ParseResult) (tea.Model, tea.Cm
 				})
 			}
 		}
+
+	case mode.CommandKill:
+		// Force kill agent(s) immediately
+		if m.workerPool == nil {
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: "⚠️ ワーカープールが初期化されていません。",
+			})
+			m.updateViewport()
+			return m, nil
+		}
+
+		args := strings.TrimSpace(result.Args)
+		if args == "" || args == "all" {
+			// Kill all agents
+			allAgents := m.workerPool.All()
+			for _, name := range allAgents {
+				m.workerPool.Kill(name)
+			}
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: fmt.Sprintf("⚠️ 全エージェント(%d)を強制終了しました。再起動するには @agent resume を実行してください。", len(allAgents)),
+			})
+		} else {
+			// Kill specific agent(s)
+			// Support: /kill @mei or /kill mei or /kill @mei @yuki
+			targets := strings.Fields(args)
+			killed := []string{}
+			notFound := []string{}
+
+			for _, target := range targets {
+				// Remove @ prefix if present
+				agentName := strings.TrimPrefix(target, "@")
+				agentName = strings.ToLower(agentName)
+
+				// Case-insensitive lookup
+				found := false
+				for _, name := range m.workerPool.All() {
+					if strings.ToLower(name) == agentName {
+						m.workerPool.Kill(name)
+						killed = append(killed, name)
+						found = true
+						break
+					}
+				}
+				if !found {
+					notFound = append(notFound, target)
+				}
+			}
+
+			if len(killed) > 0 {
+				m.messages = append(m.messages, tuiMessage{
+					role:    "system",
+					content: fmt.Sprintf("⚠️ %s を強制終了しました。再起動するには @agent resume を実行してください。", strings.Join(killed, ", ")),
+				})
+			}
+			if len(notFound) > 0 {
+				m.messages = append(m.messages, tuiMessage{
+					role:    "system",
+					content: fmt.Sprintf("❌ エージェントが見つかりません: %s", strings.Join(notFound, ", ")),
+				})
+			}
+		}
 	}
 
 	m.updateViewport()

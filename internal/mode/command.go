@@ -18,6 +18,8 @@ const (
 	CommandStatus Command = "/status"
 	// CommandResetAuto resets agent auto mode
 	CommandResetAuto Command = "/resetauto"
+	// CommandKill force kills agent(s) immediately
+	CommandKill Command = "/kill"
 )
 
 // ParseResult contains the result of parsing user input for commands
@@ -32,7 +34,7 @@ func Parse(input string) ParseResult {
 	trimmed := strings.TrimSpace(input)
 
 	// Check for known commands
-	commands := []Command{CommandPlan, CommandAuto, CommandStop, CommandStatus, CommandResetAuto}
+	commands := []Command{CommandPlan, CommandAuto, CommandStop, CommandStatus, CommandResetAuto, CommandKill}
 	for _, cmd := range commands {
 		cmdStr := string(cmd)
 		if trimmed == cmdStr {
