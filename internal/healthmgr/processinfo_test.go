@@ -1,37 +1,39 @@
 package healthmgr
 
 import (
+	"context"
+	"os"
 	"sync"
 	"testing"
+	"time"
 )
-
-// =============================================================================
-// Test Data and Mocks
-// =============================================================================
-
-// TODO: #277 実装後に gopsutil のモックを追加
-// type MockProcess struct {
-// 	cpuPercent func() (float64, error)
-// 	memInfo    func() (*process.MemoryInfoStat, error)
-// 	children   func() ([]*process.Process, error)
-// }
 
 // =============================================================================
 // ProcessInfo 構造体テスト
 // =============================================================================
 
 func TestProcessInfo_StructDefinition(t *testing.T) {
-	// TODO: #277 実装後にテストを有効化
-	t.Skip("Waiting for #277 implementation: ProcessInfo struct not yet defined")
-
 	// ProcessInfo 構造体が正しく定義されているか確認
-	// Issue #277 で定義される予定の構造体:
-	// type ProcessInfo struct {
-	//     PID      int
-	//     CPUUsage float64
-	//     MemUsage uint64
-	//     Children []int
-	// }
+	info := ProcessInfo{
+		PID:       1234,
+		CPUUsage:  25.5,
+		MemUsage:  1024 * 1024 * 100, // 100MB
+		Children:  []int{5678, 9012},
+		Timestamp: time.Now(),
+	}
+
+	if info.PID != 1234 {
+		t.Errorf("PID = %d, want 1234", info.PID)
+	}
+	if info.CPUUsage != 25.5 {
+		t.Errorf("CPUUsage = %f, want 25.5", info.CPUUsage)
+	}
+	if info.MemUsage != 1024*1024*100 {
+		t.Errorf("MemUsage = %d, want %d", info.MemUsage, 1024*1024*100)
+	}
+	if len(info.Children) != 2 {
+		t.Errorf("len(Children) = %d, want 2", len(info.Children))
+	}
 }
 
 // =============================================================================
@@ -39,17 +41,30 @@ func TestProcessInfo_StructDefinition(t *testing.T) {
 // =============================================================================
 
 func TestProcessInfo_GetProcessInfo_Success(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	// 現在のプロセスの情報を取得
+	pid := os.Getpid()
+	ctx := context.Background()
 
-	// テストケース #1: プロセス情報の初回取得
-	// 期待: CPU使用率、メモリ使用量、子プロセス一覧が取得できる
-}
+	info, err := GetProcessInfo(ctx, pid)
+	if err != nil {
+		t.Fatalf("GetProcessInfo failed: %v", err)
+	}
 
-func TestProcessInfo_PeriodicUpdate(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
-
-	// テストケース #2: 5秒間隔で定期取得
-	// 期待: heartbeat に同期して情報が更新される
+	if info.PID != pid {
+		t.Errorf("PID = %d, want %d", info.PID, pid)
+	}
+	// CPU使用率は0以上
+	if info.CPUUsage < 0 {
+		t.Errorf("CPUUsage = %f, want >= 0", info.CPUUsage)
+	}
+	// メモリ使用量は正の値
+	if info.MemUsage == 0 {
+		t.Errorf("MemUsage = 0, want > 0")
+	}
+	// Timestamp が設定されている
+	if info.Timestamp.IsZero() {
+		t.Error("Timestamp is zero")
+	}
 }
 
 // =============================================================================
@@ -57,24 +72,67 @@ func TestProcessInfo_PeriodicUpdate(t *testing.T) {
 // =============================================================================
 
 func TestProcessInfo_History_Accumulation(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	pm := NewProcessMonitor(5)
 
-	// テストケース #3: 履歴の蓄積（リングバッファ）
-	// 期待: 直近5件が保持される
+	// 3件追加
+	for i := 0; i < 3; i++ {
+		pm.UpdateProcessInfo("agent1", ProcessInfo{
+			PID:       1000 + i,
+			CPUUsage:  float64(i * 10),
+			Timestamp: time.Now(),
+		})
+	}
+
+	history := pm.GetHistory("agent1")
+	if len(history) != 3 {
+		t.Errorf("len(history) = %d, want 3", len(history))
+	}
 }
 
 func TestProcessInfo_History_Overflow(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	pm := NewProcessMonitor(5)
 
-	// テストケース #4: 6件目以降の取得
-	// 期待: 最古の履歴が押し出され、5件を維持
+	// 7件追加（5件を超える）
+	for i := 0; i < 7; i++ {
+		pm.UpdateProcessInfo("agent1", ProcessInfo{
+			PID:       1000 + i,
+			CPUUsage:  float64(i * 10),
+			Timestamp: time.Now(),
+		})
+	}
+
+	history := pm.GetHistory("agent1")
+	if len(history) != 5 {
+		t.Errorf("len(history) = %d, want 5", len(history))
+	}
+
+	// 最古のエントリが押し出されている（PID 1000, 1001 はない）
+	// 最古は PID 1002 のはず
+	if history[0].PID != 1002 {
+		t.Errorf("oldest PID = %d, want 1002", history[0].PID)
+	}
+	// 最新は PID 1006
+	if history[4].PID != 1006 {
+		t.Errorf("newest PID = %d, want 1006", history[4].PID)
+	}
 }
 
 func TestProcessInfo_MultipleAgents(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	pm := NewProcessMonitor(5)
 
-	// テストケース #5: 複数エージェントの並行監視
-	// 期待: 各エージェント独立して情報取得
+	pm.UpdateProcessInfo("agent1", ProcessInfo{PID: 1000})
+	pm.UpdateProcessInfo("agent2", ProcessInfo{PID: 2000})
+	pm.UpdateProcessInfo("agent1", ProcessInfo{PID: 1001})
+
+	h1 := pm.GetHistory("agent1")
+	h2 := pm.GetHistory("agent2")
+
+	if len(h1) != 2 {
+		t.Errorf("agent1 history len = %d, want 2", len(h1))
+	}
+	if len(h2) != 1 {
+		t.Errorf("agent2 history len = %d, want 1", len(h2))
+	}
 }
 
 // =============================================================================
@@ -82,52 +140,35 @@ func TestProcessInfo_MultipleAgents(t *testing.T) {
 // =============================================================================
 
 func TestProcessInfo_Error_InvalidPID(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	ctx := context.Background()
 
-	// テストケース #6: プロセスが存在しない（PID不正）
-	// 期待: エラーハンドリング、ステータス反映
+	// 存在しないPID
+	_, err := GetProcessInfo(ctx, 999999999)
+	if err == nil {
+		t.Error("expected error for invalid PID, got nil")
+	}
 }
 
-func TestProcessInfo_Error_ProcessTerminated(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+func TestProcessInfo_GetLatest(t *testing.T) {
+	pm := NewProcessMonitor(5)
 
-	// テストケース #7: プロセスが監視中に終了
-	// 期待: 終了を検知、適切なステータス更新
-}
+	// 空の状態
+	latest := pm.GetLatest("agent1")
+	if latest != nil {
+		t.Error("expected nil for empty history")
+	}
 
-func TestProcessInfo_ManyChildProcesses(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	// データ追加後
+	pm.UpdateProcessInfo("agent1", ProcessInfo{PID: 1000})
+	pm.UpdateProcessInfo("agent1", ProcessInfo{PID: 1001})
 
-	// テストケース #8: 子プロセスが大量にある
-	// 期待: 性能影響なく取得できる
-}
-
-func TestProcessInfo_HighCPUUsage(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
-
-	// テストケース #9: CPU使用率が100%に張り付き
-	// 期待: 正しく取得（異常検知の入力として）
-}
-
-func TestProcessInfo_MemorySpike(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
-
-	// テストケース #10: メモリ使用量が急増
-	// 期待: 値の変化を正しく追跡
-}
-
-func TestProcessInfo_Error_GopsutilFailure(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
-
-	// テストケース #11: gopsutil がエラーを返す
-	// 期待: ベストエフォートで処理継続
-}
-
-func TestProcessInfo_Error_PermissionDenied(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
-
-	// テストケース #12: 権限不足でプロセス情報取得失敗
-	// 期待: 適切なエラーメッセージ
+	latest = pm.GetLatest("agent1")
+	if latest == nil {
+		t.Fatal("expected non-nil")
+	}
+	if latest.PID != 1001 {
+		t.Errorf("latest PID = %d, want 1001", latest.PID)
+	}
 }
 
 // =============================================================================
@@ -135,31 +176,64 @@ func TestProcessInfo_Error_PermissionDenied(t *testing.T) {
 // =============================================================================
 
 func TestProcessInfo_Boundary_EmptyHistory(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	pm := NewProcessMonitor(5)
 
-	// テストケース #13: 履歴0件の状態で取得リクエスト
-	// 期待: 空配列を返す（panicしない）
+	history := pm.GetHistory("nonexistent")
+	if history == nil {
+		t.Error("expected empty slice, got nil")
+	}
+	if len(history) != 0 {
+		t.Errorf("len(history) = %d, want 0", len(history))
+	}
 }
 
 func TestProcessInfo_Boundary_ZeroCPU(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	pm := NewProcessMonitor(5)
 
-	// テストケース #14: CPU使用率 0%
-	// 期待: 正常に記録
-}
+	pm.UpdateProcessInfo("agent1", ProcessInfo{
+		PID:      1000,
+		CPUUsage: 0.0,
+	})
 
-func TestProcessInfo_Boundary_ZeroMemory(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
-
-	// テストケース #15: メモリ使用量 0 bytes
-	// 期待: 正常に記録
+	latest := pm.GetLatest("agent1")
+	if latest == nil {
+		t.Fatal("expected non-nil")
+	}
+	if latest.CPUUsage != 0.0 {
+		t.Errorf("CPUUsage = %f, want 0.0", latest.CPUUsage)
+	}
 }
 
 func TestProcessInfo_Boundary_NoChildren(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	pm := NewProcessMonitor(5)
 
-	// テストケース #16: 子プロセス 0件
-	// 期待: 空スライスを返す
+	pm.UpdateProcessInfo("agent1", ProcessInfo{
+		PID:      1000,
+		Children: []int{},
+	})
+
+	latest := pm.GetLatest("agent1")
+	if latest == nil {
+		t.Fatal("expected non-nil")
+	}
+	if len(latest.Children) != 0 {
+		t.Errorf("len(Children) = %d, want 0", len(latest.Children))
+	}
+}
+
+func TestProcessInfo_DefaultHistorySize(t *testing.T) {
+	// historySize <= 0 の場合、デフォルト値5が使われる
+	pm := NewProcessMonitor(0)
+
+	// 6件追加
+	for i := 0; i < 6; i++ {
+		pm.UpdateProcessInfo("agent1", ProcessInfo{PID: 1000 + i})
+	}
+
+	history := pm.GetHistory("agent1")
+	if len(history) != 5 {
+		t.Errorf("len(history) = %d, want 5 (default)", len(history))
+	}
 }
 
 // =============================================================================
@@ -167,172 +241,178 @@ func TestProcessInfo_Boundary_NoChildren(t *testing.T) {
 // =============================================================================
 
 func TestProcessInfo_Concurrent_MultipleReaders(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	pm := NewProcessMonitor(5)
 
-	// テストケース #17: 複数goroutineから同時読み取り
-	// 期待: race conditionなし
+	// 初期データ
+	for i := 0; i < 5; i++ {
+		pm.UpdateProcessInfo("agent1", ProcessInfo{PID: 1000 + i})
+	}
 
-	// テスト構造（実装後に有効化）:
-	// var wg sync.WaitGroup
-	// for i := 0; i < 10; i++ {
-	//     wg.Add(1)
-	//     go func() {
-	//         defer wg.Done()
-	//         // GetProcessInfo() を並行呼び出し
-	//     }()
-	// }
-	// wg.Wait()
-	_ = sync.WaitGroup{} // unused警告回避
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				_ = pm.GetHistory("agent1")
+				_ = pm.GetLatest("agent1")
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestProcessInfo_Concurrent_ReadWhileWrite(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	pm := NewProcessMonitor(5)
 
-	// テストケース #18: 読み取り中に更新
-	// 期待: データ整合性が保たれる
-}
+	done := make(chan struct{})
 
-func TestProcessInfo_Integration_WithManager(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
+	// Writer
+	go func() {
+		for i := 0; i < 100; i++ {
+			pm.UpdateProcessInfo("agent1", ProcessInfo{PID: 1000 + i})
+		}
+		close(done)
+	}()
 
-	// テストケース #19: Manager と ProcessInfo の連携
-	// 期待: 既存のmutexパターンと整合
-}
-
-// =============================================================================
-// 統合テスト観点
-// =============================================================================
-
-func TestProcessInfo_Integration_HealthStructure(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
-
-	// テストケース #20: healthmgr との統合
-	// 期待: Health 構造体に ProcessInfo が含まれる
-}
-
-func TestProcessInfo_Integration_HeartbeatSync(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
-
-	// テストケース #21: heartbeat 5秒間隔との同期
-	// 期待: タイミングが正しく連携
-}
-
-// =============================================================================
-// テーブル駆動テスト（実装後に使用）
-// =============================================================================
-
-func TestProcessInfo_TableDriven_GetInfo(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
-
-	// テーブル駆動テストの構造:
-	tests := []struct {
-		name        string
-		setupFn     func() // モックのセットアップ
-		wantCPU     float64
-		wantMem     uint64
-		wantChildN  int
-		wantErr     bool
-		description string
-	}{
-		{
-			name:        "normal process",
-			wantCPU:     25.5,
-			wantMem:     1024 * 1024 * 100, // 100MB
-			wantChildN:  3,
-			wantErr:     false,
-			description: "正常なプロセス情報の取得",
-		},
-		{
-			name:        "idle process",
-			wantCPU:     0.0,
-			wantMem:     1024 * 1024, // 1MB
-			wantChildN:  0,
-			wantErr:     false,
-			description: "アイドル状態のプロセス",
-		},
-		{
-			name:        "high load",
-			wantCPU:     99.9,
-			wantMem:     1024 * 1024 * 1024, // 1GB
-			wantChildN:  50,
-			wantErr:     false,
-			description: "高負荷状態のプロセス",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// 実装後にテストロジックを追加
-			_ = tt.description // unused警告回避
-		})
-	}
-}
-
-func TestProcessInfo_TableDriven_History(t *testing.T) {
-	t.Skip("Waiting for #277 implementation")
-
-	// リングバッファのテーブル駆動テスト
-	tests := []struct {
-		name       string
-		addCount   int // 追加する履歴の数
-		wantLen    int // 期待する履歴の長さ
-		wantOldest int // 期待する最古のインデックス
-	}{
-		{
-			name:       "empty",
-			addCount:   0,
-			wantLen:    0,
-			wantOldest: -1,
-		},
-		{
-			name:       "partial fill",
-			addCount:   3,
-			wantLen:    3,
-			wantOldest: 0,
-		},
-		{
-			name:       "exact fill",
-			addCount:   5,
-			wantLen:    5,
-			wantOldest: 0,
-		},
-		{
-			name:       "overflow once",
-			addCount:   6,
-			wantLen:    5,
-			wantOldest: 1, // 最初のエントリが押し出される
-		},
-		{
-			name:       "overflow multiple",
-			addCount:   10,
-			wantLen:    5,
-			wantOldest: 5, // 最初の5件が押し出される
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// 実装後にテストロジックを追加
-			_ = tt.wantOldest // unused警告回避
-		})
+	// Reader
+	for {
+		select {
+		case <-done:
+			return
+		default:
+			_ = pm.GetHistory("agent1")
+			_ = pm.GetLatest("agent1")
+		}
 	}
 }
 
 // =============================================================================
-// ベンチマーク（オプション）
+// Clear テスト
+// =============================================================================
+
+func TestProcessInfo_Clear(t *testing.T) {
+	pm := NewProcessMonitor(5)
+
+	pm.UpdateProcessInfo("agent1", ProcessInfo{PID: 1000})
+	pm.UpdateProcessInfo("agent2", ProcessInfo{PID: 2000})
+
+	pm.Clear("agent1")
+
+	h1 := pm.GetHistory("agent1")
+	h2 := pm.GetHistory("agent2")
+
+	if len(h1) != 0 {
+		t.Errorf("agent1 should be cleared, got len=%d", len(h1))
+	}
+	if len(h2) != 1 {
+		t.Errorf("agent2 should not be affected, got len=%d", len(h2))
+	}
+}
+
+func TestProcessInfo_ClearAll(t *testing.T) {
+	pm := NewProcessMonitor(5)
+
+	pm.UpdateProcessInfo("agent1", ProcessInfo{PID: 1000})
+	pm.UpdateProcessInfo("agent2", ProcessInfo{PID: 2000})
+
+	pm.ClearAll()
+
+	h1 := pm.GetHistory("agent1")
+	h2 := pm.GetHistory("agent2")
+
+	if len(h1) != 0 {
+		t.Errorf("agent1 should be cleared, got len=%d", len(h1))
+	}
+	if len(h2) != 0 {
+		t.Errorf("agent2 should be cleared, got len=%d", len(h2))
+	}
+}
+
+// =============================================================================
+// リングバッファ内部テスト
+// =============================================================================
+
+func TestRingBuffer_Basic(t *testing.T) {
+	rb := newRingBuffer(3)
+
+	// 空の状態
+	if rb.getLatest() != nil {
+		t.Error("expected nil for empty buffer")
+	}
+	if len(rb.getAll()) != 0 {
+		t.Error("expected empty slice for empty buffer")
+	}
+
+	// 1件追加
+	rb.push(ProcessInfo{PID: 1})
+	if rb.count != 1 {
+		t.Errorf("count = %d, want 1", rb.count)
+	}
+
+	latest := rb.getLatest()
+	if latest == nil || latest.PID != 1 {
+		t.Errorf("latest = %v, want PID=1", latest)
+	}
+
+	// 3件追加（バッファフル）
+	rb.push(ProcessInfo{PID: 2})
+	rb.push(ProcessInfo{PID: 3})
+
+	all := rb.getAll()
+	if len(all) != 3 {
+		t.Errorf("len(all) = %d, want 3", len(all))
+	}
+
+	// 4件目（オーバーフロー）
+	rb.push(ProcessInfo{PID: 4})
+
+	all = rb.getAll()
+	if len(all) != 3 {
+		t.Errorf("len(all) = %d, want 3", len(all))
+	}
+	// 最古は PID=2
+	if all[0].PID != 2 {
+		t.Errorf("oldest PID = %d, want 2", all[0].PID)
+	}
+	// 最新は PID=4
+	if all[2].PID != 4 {
+		t.Errorf("newest PID = %d, want 4", all[2].PID)
+	}
+}
+
+// =============================================================================
+// ベンチマーク
 // =============================================================================
 
 func BenchmarkProcessInfo_GetInfo(b *testing.B) {
-	b.Skip("Waiting for #277 implementation")
+	ctx := context.Background()
+	pid := os.Getpid()
 
-	// gopsutil 呼び出しのパフォーマンス計測
-	// for i := 0; i < b.N; i++ {
-	//     // GetProcessInfo()
-	// }
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = GetProcessInfo(ctx, pid)
+	}
 }
 
 func BenchmarkProcessInfo_HistoryWrite(b *testing.B) {
-	b.Skip("Waiting for #277 implementation")
+	pm := NewProcessMonitor(5)
+	info := ProcessInfo{PID: 1000, CPUUsage: 25.5}
 
-	// リングバッファへの書き込みパフォーマンス
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		pm.UpdateProcessInfo("agent1", info)
+	}
+}
+
+func BenchmarkProcessInfo_HistoryRead(b *testing.B) {
+	pm := NewProcessMonitor(5)
+	for i := 0; i < 5; i++ {
+		pm.UpdateProcessInfo("agent1", ProcessInfo{PID: 1000 + i})
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = pm.GetHistory("agent1")
+	}
 }
