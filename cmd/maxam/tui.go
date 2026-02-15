@@ -875,16 +875,30 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		footerHeight := 3
 		verticalMargin := headerHeight + footerHeight
 
+		// viewportの高さが負にならないよう最小値を確保
+		viewportHeight := msg.Height - verticalMargin
+		if viewportHeight < 1 {
+			viewportHeight = 1
+		}
+		viewportWidth := msg.Width
+		if viewportWidth < 1 {
+			viewportWidth = 1
+		}
+
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width, msg.Height-verticalMargin)
+			m.viewport = viewport.New(viewportWidth, viewportHeight)
 			m.viewport.YPosition = headerHeight
 			m.analyzeProject()
 			m.ready = true
 		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - verticalMargin
+			m.viewport.Width = viewportWidth
+			m.viewport.Height = viewportHeight
 		}
-		m.textInput.Width = msg.Width - 8
+		textInputWidth := msg.Width - 8
+		if textInputWidth < 1 {
+			textInputWidth = 1
+		}
+		m.textInput.Width = textInputWidth
 		m.updateViewport()
 
 	case analysisTickMsg:
