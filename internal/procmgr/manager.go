@@ -13,13 +13,13 @@ import (
 // Manager manages agent processes.
 // It implements healthmgr.RecoveryHandler interface.
 type Manager struct {
-	mu              sync.RWMutex
-	config          Config
-	processes       map[string]*Process
-	factory         ProcessFactory
-	running         bool
-	ctx             context.Context
-	cancel          context.CancelFunc
+	mu        sync.RWMutex
+	config    Config
+	processes map[string]*Process
+	factory   ProcessFactory
+	running   bool
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 // NewManager creates a new process manager.

@@ -24,9 +24,9 @@ const (
 
 // RecoveryResult represents the outcome of a recovery attempt.
 type RecoveryResult struct {
-	AgentName       string
-	Success         bool
-	Attempt         int
-	LastError       string
+	AgentName        string
+	Success          bool
+	Attempt          int
+	LastError        string
 	TimeSinceFailure time.Duration
 }
