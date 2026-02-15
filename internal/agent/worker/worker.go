@@ -425,13 +425,20 @@ func (p *Pool) Restart(name string) bool {
 	p.mu.Lock()
 	w, ok := p.workers[name]
 	p.mu.Unlock()
+
 	if !ok {
 		return false
 	}
 
-	// Lock the worker to safely modify context and channels
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	// Wait for old goroutines to finish
+	w.wg.Wait()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// Re-check worker still exists after releasing lock
+	if _, ok := p.workers[name]; !ok {
+		return false
+	}
 
 	// Create new context and restart goroutines
 	ctx, cancel := context.WithCancel(context.Background())

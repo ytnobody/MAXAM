@@ -18,11 +18,12 @@ type TUIClient struct {
 	clientID      string
 	conn          *websocket.Conn
 	mu            sync.RWMutex
-	writeMu       sync.Mutex // protects concurrent WriteMessage calls
+	writeMu       sync.Mutex // protects all WriteMessage calls
 	connected     atomic.Bool
 	incoming      chan *Message
 	outgoing      chan *Message
 	done          chan struct{}
+	doneOnce      sync.Once
 	reconnectWait time.Duration
 	maxReconnect  int
 	onMessage     func(*Message)
@@ -62,6 +63,7 @@ func NewTUIClient(cfg TUIClientConfig) *TUIClient {
 }
 
 // SetMessageHandler sets the callback for incoming messages
+// Note: Should be called before Connect to avoid race conditions
 func (c *TUIClient) SetMessageHandler(handler func(*Message)) {
 	c.mu.Lock()
 	c.onMessage = handler
@@ -150,12 +152,9 @@ func (c *TUIClient) Disconnect() error {
 	c.connected.Store(false)
 
 	// Close done channel (only once)
-	select {
-	case <-c.done:
-		// Already closed
-	default:
+	c.doneOnce.Do(func() {
 		close(c.done)
-	}
+	})
 
 	c.mu.Lock()
 	conn := c.conn
@@ -165,7 +164,7 @@ func (c *TUIClient) Disconnect() error {
 
 	var err error
 	if conn != nil {
-		// Use writeMu to prevent race with writePump's WriteMessage
+		// Send close message with write mutex to prevent race with writePump
 		c.writeMu.Lock()
 		deadline := time.Now().Add(time.Second)
 		conn.SetWriteDeadline(deadline)
@@ -229,7 +228,13 @@ func (c *TUIClient) readPump() {
 	conn.SetReadLimit(maxMessageSize)
 	conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(pongWait))
+		// Check if still connected before setting deadline
+		c.mu.RLock()
+		currentConn := c.conn
+		c.mu.RUnlock()
+		if currentConn != nil {
+			currentConn.SetReadDeadline(time.Now().Add(pongWait))
+		}
 		return nil
 	})
 
@@ -271,14 +276,6 @@ func (c *TUIClient) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 
-	c.mu.RLock()
-	conn := c.conn
-	c.mu.RUnlock()
-
-	if conn == nil {
-		return
-	}
-
 	for {
 		select {
 		case <-c.done:
@@ -286,9 +283,9 @@ func (c *TUIClient) writePump() {
 
 		case msg := <-c.outgoing:
 			c.mu.RLock()
-			currentConn := c.conn
+			conn := c.conn
 			c.mu.RUnlock()
-			if currentConn == nil {
+			if conn == nil {
 				return
 			}
 			data, err := msg.ToJSON()
@@ -296,27 +293,27 @@ func (c *TUIClient) writePump() {
 				continue
 			}
 			c.writeMu.Lock()
-			currentConn.SetWriteDeadline(time.Now().Add(writeWait))
-			writeErr := currentConn.WriteMessage(websocket.TextMessage, data)
+			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			err = conn.WriteMessage(websocket.TextMessage, data)
 			c.writeMu.Unlock()
-			if writeErr != nil {
-				c.handleDisconnect(writeErr)
+			if err != nil {
+				c.handleDisconnect(err)
 				return
 			}
 
 		case <-ticker.C:
 			c.mu.RLock()
-			currentConn := c.conn
+			conn := c.conn
 			c.mu.RUnlock()
-			if currentConn == nil {
+			if conn == nil {
 				return
 			}
 			c.writeMu.Lock()
-			currentConn.SetWriteDeadline(time.Now().Add(writeWait))
-			writeErr := currentConn.WriteMessage(websocket.PingMessage, nil)
+			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			err := conn.WriteMessage(websocket.PingMessage, nil)
 			c.writeMu.Unlock()
-			if writeErr != nil {
-				c.handleDisconnect(writeErr)
+			if err != nil {
+				c.handleDisconnect(err)
 				return
 			}
 		}
@@ -325,7 +322,7 @@ func (c *TUIClient) writePump() {
 
 // deliverMessage delivers a message to handlers
 func (c *TUIClient) deliverMessage(msg *Message) {
-	// Deliver to handler if set
+	// Deliver to handler if set (get handler under lock)
 	c.mu.RLock()
 	handler := c.onMessage
 	c.mu.RUnlock()
@@ -358,12 +355,9 @@ func (c *TUIClient) handleDisconnect(err error) {
 	c.connected.Store(false)
 
 	// Close done channel (only once)
-	select {
-	case <-c.done:
-		// Already closed
-	default:
+	c.doneOnce.Do(func() {
 		close(c.done)
-	}
+	})
 
 	c.mu.Lock()
 	if c.conn != nil {
