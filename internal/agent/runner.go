@@ -148,7 +148,7 @@ func (r *Runner) Run(ctx context.Context, prompt string) (string, error) {
 type Model string
 
 const (
-	ModelDefault Model = ""       // Use claude's default
+	ModelDefault Model = "opus"   // Default to most capable model
 	ModelHaiku   Model = "haiku"  // Fast, lightweight
 	ModelSonnet  Model = "sonnet" // Balanced
 	ModelOpus    Model = "opus"   // Most capable

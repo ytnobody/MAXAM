@@ -197,7 +197,7 @@ func TestModelConstants(t *testing.T) {
 		model Model
 		want  string
 	}{
-		{ModelDefault, ""},
+		{ModelDefault, "opus"},
 		{ModelHaiku, "haiku"},
 		{ModelSonnet, "sonnet"},
 		{ModelOpus, "opus"},
