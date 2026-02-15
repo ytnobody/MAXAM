@@ -130,3 +130,19 @@ func (h *History) save() error {
 func (h *History) Path() string {
 	return h.filePath
 }
+
+// TrimToSize trims the message history to the specified count
+// Keeps the most recent `count` messages
+func (h *History) TrimToSize(count int) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if count <= 0 {
+		h.Messages = make([]Message, 0)
+	} else if len(h.Messages) > count {
+		h.Messages = h.Messages[len(h.Messages)-count:]
+	}
+
+	h.UpdatedAt = time.Now()
+	return h.save()
+}
