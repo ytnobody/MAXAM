@@ -51,6 +51,9 @@ type Worker struct {
 
 	// Callback for building prompts with context
 	buildPrompt func(agentName, input string) string
+
+	// Mutex for protecting buildPrompt and context fields during Restart
+	mu sync.RWMutex
 }
 
 // NewWorker creates a new worker for an agent
@@ -69,6 +72,8 @@ func NewWorker(name string, runner *agent.Runner) *Worker {
 
 // SetPromptBuilder sets the callback for building prompts
 func (w *Worker) SetPromptBuilder(fn func(agentName, input string) string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.buildPrompt = fn
 }
 
@@ -142,11 +147,18 @@ func (w *Worker) SendTask(description, prompt string, response chan<- TaskRespon
 func (w *Worker) chatLoop() {
 	defer w.wg.Done()
 
+	// Capture the context and channel at the start of this loop iteration.
+	// This prevents races when Restart() modifies w.ctx and w.chatChan.
+	w.mu.RLock()
+	ctx := w.ctx
+	chatChan := w.chatChan
+	w.mu.RUnlock()
+
 	for {
 		select {
-		case <-w.ctx.Done():
+		case <-ctx.Done():
 			return
-		case req, ok := <-w.chatChan:
+		case req, ok := <-chatChan:
 			if !ok {
 				return
 			}
@@ -188,8 +200,12 @@ func (w *Worker) handleChat(req ChatRequest) {
 	defer w.state.CompleteTask()
 
 	prompt := req.Input
-	if w.buildPrompt != nil {
-		prompt = w.buildPrompt(w.name, req.Input)
+	// Read buildPrompt under RLock to prevent race with SetPromptBuilder
+	w.mu.RLock()
+	buildFn := w.buildPrompt
+	w.mu.RUnlock()
+	if buildFn != nil {
+		prompt = buildFn(w.name, req.Input)
 	}
 
 	ctx, cancel := context.WithTimeout(w.ctx, 5*time.Minute)
@@ -213,11 +229,18 @@ var ErrAgentStopped = fmt.Errorf("agent is stopped")
 func (w *Worker) taskLoop() {
 	defer w.wg.Done()
 
+	// Capture the context and channel at the start of this loop iteration.
+	// This prevents races when Restart() modifies w.ctx and w.taskChan.
+	w.mu.RLock()
+	ctx := w.ctx
+	taskChan := w.taskChan
+	w.mu.RUnlock()
+
 	for {
 		select {
-		case <-w.ctx.Done():
+		case <-ctx.Done():
 			return
-		case req, ok := <-w.taskChan:
+		case req, ok := <-taskChan:
 			if !ok {
 				return
 			}
@@ -400,19 +423,25 @@ func (p *Pool) Kill(name string) bool {
 // Restart restarts a killed worker by creating a new context
 func (p *Pool) Restart(name string) bool {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if w, ok := p.workers[name]; ok {
-		// Create new context and restart goroutines
-		ctx, cancel := context.WithCancel(context.Background())
-		w.ctx = ctx
-		w.cancel = cancel
-		w.chatChan = make(chan ChatRequest, 10)
-		w.taskChan = make(chan TaskRequest, 10)
-		w.state.Resume()
-		w.wg.Add(2)
-		go w.chatLoop()
-		go w.taskLoop()
-		return true
+	w, ok := p.workers[name]
+	p.mu.Unlock()
+	if !ok {
+		return false
 	}
-	return false
+
+	// Lock the worker to safely modify context and channels
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Create new context and restart goroutines
+	ctx, cancel := context.WithCancel(context.Background())
+	w.ctx = ctx
+	w.cancel = cancel
+	w.chatChan = make(chan ChatRequest, 10)
+	w.taskChan = make(chan TaskRequest, 10)
+	w.state.Resume()
+	w.wg.Add(2)
+	go w.chatLoop()
+	go w.taskLoop()
+	return true
 }
