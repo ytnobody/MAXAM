@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -238,13 +239,16 @@ func TestFileMonitor_AlertCallback(t *testing.T) {
 	m := NewFileMonitor(cfg)
 
 	var callbackCalled atomic.Int32
+	var mu sync.Mutex
 	var lastHealth AgentHealth
 	var lastPrevState AgentState
 
 	m.SetAlertCallback(func(health AgentHealth, prevState AgentState) {
 		callbackCalled.Add(1)
+		mu.Lock()
 		lastHealth = health
 		lastPrevState = prevState
+		mu.Unlock()
 	})
 
 	now := time.Now()
@@ -260,14 +264,21 @@ func TestFileMonitor_AlertCallback(t *testing.T) {
 	if callbackCalled.Load() != 1 {
 		t.Errorf("expected callback called once, got %d", callbackCalled.Load())
 	}
-	if lastHealth.AgentName != "test-agent" {
-		t.Errorf("expected agent 'test-agent', got %s", lastHealth.AgentName)
+
+	mu.Lock()
+	healthName := lastHealth.AgentName
+	healthState := lastHealth.State
+	prevState := lastPrevState
+	mu.Unlock()
+
+	if healthName != "test-agent" {
+		t.Errorf("expected agent 'test-agent', got %s", healthName)
 	}
-	if lastHealth.State != StateDegraded {
-		t.Errorf("expected degraded state, got %v", lastHealth.State)
+	if healthState != StateDegraded {
+		t.Errorf("expected degraded state, got %v", healthState)
 	}
-	if lastPrevState != StateUnknown {
-		t.Errorf("expected previous state unknown, got %v", lastPrevState)
+	if prevState != StateUnknown {
+		t.Errorf("expected previous state unknown, got %v", prevState)
 	}
 }
 
