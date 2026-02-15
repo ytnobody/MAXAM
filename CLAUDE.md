@@ -206,24 +206,78 @@ System: メンションが漏れている可能性があります
 2. 独立したタスクは同時に複数エージェントへ振る
 3. 依存がある場合は順序を明示する
 4. 各メンバーの作業状況を確認し、空いているメンバーを優先（偏り防止）
+5. 同一ロールの複数インスタンス活用を検討（分身技術）
 
-**例：並行振り**
+**例：並行振り（異なるロール）**
 ```
-@Yuki #90 お願い
-@Rin #92 お願い
-@Shiori #93 お願い
+@yuki-1 #90 お願い
+@rin-1 #92 お願い
+@shiori-1 #93 お願い
+```
+
+**例：並行振り（同一ロール・複数インスタンス）**
+```
+@yuki-1 #100 お願い（バックエンドAPI実装）
+@yuki-2 #101 お願い（インフラ整備）
 ```
 
 **例：依存ありの場合**
 ```
-@Yuki #100 先にお願い（APIの実装）
-→ 完了後 @Rin #101（フロントでAPI使う）
+@yuki-1 #100 先にお願い（APIの実装）
+→ 完了後 @rin-1 #101（フロントでAPI使う）
 ```
 
 **なぜ並行実行か:**
 - 直列処理は待ち時間が発生し非効率
 - worktree運用で各エージェントは独立して作業可能
 - 依存がなければ同時進行で時間短縮
+- 同一ロールでも複数インスタンスで並行処理可能
+
+### 並行実行ガイドライン
+
+タスクを並行実行してよいかの判断基準。
+
+#### 並行可能な条件
+
+| 条件 | 説明 |
+|------|------|
+| 独立したIssue | ファイルの編集範囲が重ならない |
+| 別リポジトリ | 異なるプロジェクトでの作業 |
+| 別ディレクトリ | 同一リポジトリでも影響範囲が独立 |
+
+**並行可能な例:**
+- バックエンドAPI実装 と インフラ整備（別領域）
+- フロントエンド改修 と バックエンドリファクタ（別ディレクトリ）
+- テスト追加 と ドキュメント更新（独立作業）
+
+#### 並行不可（順序指定が必要）
+
+| 条件 | 説明 |
+|------|------|
+| 同一ファイル編集 | 競合リスクあり |
+| 依存関係あり | A完了後にBが実行可能 |
+| 共有リソース変更 | config.yaml、スキーマ等 |
+
+**順序指定が必要な例:**
+- API実装 → フロントでAPI呼び出し（依存）
+- DBスキーマ変更 → マイグレーション適用（依存）
+- config.yaml編集（両インスタンスが触ると競合）
+
+#### 排他制御が必要な場合
+
+同一ファイルを触る可能性がある場合、PMがタスク分配時に排他制御を明示する。
+
+```
+# 排他制御の例
+@yuki-1 config.yaml の database セクション担当
+@yuki-2 config.yaml の logging セクション担当
+→ 同時編集だが、セクションが分かれているのでOK
+
+# 競合リスクの例（避けるべき）
+@yuki-1 config.yaml 全体を編集
+@yuki-2 config.yaml 全体を編集
+→ 競合するので、順序指定に変更
+```
 
 ### タスク分配の偏り防止
 
@@ -391,21 +445,30 @@ PMがエラーで応答不能になった場合：
 ### ディレクトリ構成
 
 ```
-/tmp/maxam/{agent-name}/{parent}_{child}/
+/tmp/maxam/{agent-name}-{instance}/{parent}_{child}/
 ```
 
-親ディレクトリからの相対パスを `_` で連結してフラットに管理する。
+- `{agent-name}`: エージェント名（例: yuki, rin, shiori）
+- `{instance}`: インスタンス番号（例: 1, 2, 3）- 複数インスタンス運用時に使用
+- 親ディレクトリからの相対パスを `_` で連結してフラットに管理する
 
 | パス | 用途 |
 |------|------|
 | `~/{project}/` | 元リポジトリ（main）、PMの作業場所 |
-| `/tmp/maxam/{agent}/{project}/` | 各エージェント用worktree（単独リポジトリ） |
-| `/tmp/maxam/{agent}/{parent}_{child}/` | 各エージェント用worktree（ネストしたリポジトリ） |
+| `/tmp/maxam/{agent}-{instance}/{project}/` | 各エージェント用worktree（単独リポジトリ） |
+| `/tmp/maxam/{agent}-{instance}/{parent}_{child}/` | 各エージェント用worktree（ネストしたリポジトリ） |
 
-**例：単独プロジェクト**
+**例：単独プロジェクト（単一インスタンス）**
 ```
-/tmp/maxam/agent1/project/      # ~/projectで作業
-/tmp/maxam/agent2/project/      # agent2のproject作業
+/tmp/maxam/yuki-1/MAXAM/        # Yuki-1号機のMAXAM作業
+/tmp/maxam/rin-1/MAXAM/         # Rin-1号機のMAXAM作業
+```
+
+**例：複数インスタンス運用**
+```
+/tmp/maxam/yuki-1/MAXAM/        # Yuki-1号機のMAXAM作業
+/tmp/maxam/yuki-2/MAXAM/        # Yuki-2号機のMAXAM作業（並行実行）
+/tmp/maxam/yuki-1/HOGEHOGE/     # Yuki-1号機のHOGEHOGE作業
 ```
 
 **例：ネストしたサブプロジェクト（親ディレクトリ配下に複数リポジトリ）**
@@ -417,24 +480,43 @@ PMがエラーで応答不能になった場合：
 
 ↓ worktreeパス（_で連結）
 
-/tmp/maxam/agent1/parent_repo1/    # parent/repo1
-/tmp/maxam/agent1/parent_repo2/    # parent/repo2
-/tmp/maxam/agent1/parent_repo3/    # parent/repo3
+/tmp/maxam/yuki-1/parent_repo1/    # parent/repo1
+/tmp/maxam/yuki-1/parent_repo2/    # parent/repo2
+/tmp/maxam/yuki-2/parent_repo3/    # parent/repo3（別インスタンスで並行作業）
 ```
 
 ### 運用ルール
 
 1. **作業開始時**: worktreeが存在しなければ作成
    ```bash
-   # 単独リポジトリ
-   git worktree add /tmp/maxam/{name}/{project} {branch}
+   # 単独リポジトリ（インスタンス番号付き）
+   git worktree add /tmp/maxam/{name}-{instance}/{project} {branch}
 
    # ネストしたリポジトリ（親ディレクトリ名を含める）
-   git worktree add /tmp/maxam/{name}/{parent}_{child} {branch}
+   git worktree add /tmp/maxam/{name}-{instance}/{parent}_{child} {branch}
    ```
 2. **ブランチ管理**: worktree内で自由に切り替えOK
 3. **マシン再起動時**: `/tmp`は消えるので再作成
 4. **サブプロジェクト検出**: MAXAMは起動時に配下のgitリポジトリを自動検出
+
+### 複数インスタンス運用（分身技術）
+
+同一ロールのエージェントが複数インスタンスで並行実行することで、スループットを向上させる。
+
+**いつ使うか:**
+- 独立したタスクが複数ある場合
+- 単一エージェントの処理がボトルネックになっている場合
+
+**識別ルール:**
+- Worktreeパス: `/tmp/maxam/{agent}-{instance}/` で区別
+- チャットでの名乗り: `@yuki-1`、`@yuki-2` のように識別
+- タスク分配時: PMが「#99 は yuki-1 が担当」と明示
+
+**例：PMのタスク分配**
+```
+@yuki-1 #100 お願い（バックエンドAPI実装）
+@yuki-2 #101 お願い（インフラ整備）
+```
 
 ### 備考
 
