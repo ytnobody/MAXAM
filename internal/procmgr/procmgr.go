@@ -90,6 +90,9 @@ type ManagedProcess struct {
 	cancel       context.CancelFunc
 	onExit       func(name string, err error)
 	restartDelay time.Duration
+	waitOnce     sync.Once
+	waitErr      error
+	waitDone     chan struct{}
 }
 
 // Start starts a new process with the given configuration.
@@ -135,6 +138,7 @@ func (m *Manager) startProcess(cfg ProcessConfig) (*ManagedProcess, error) {
 		ctx:          ctx,
 		cancel:       cancel,
 		restartDelay: 5 * time.Second, // Default delay between restarts
+		waitDone:     make(chan struct{}),
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -156,15 +160,19 @@ func (m *Manager) startProcess(cfg ProcessConfig) (*ManagedProcess, error) {
 
 // monitor watches the process and handles exit.
 func (p *ManagedProcess) monitor() {
-	err := p.cmd.Wait()
+	p.waitOnce.Do(func() {
+		p.waitErr = p.cmd.Wait()
+		close(p.waitDone)
+	})
 
 	p.mu.Lock()
 	p.info.State = StateStopped
-	p.info.LastError = err
+	p.info.LastError = p.waitErr
+	handler := p.onExit
 	p.mu.Unlock()
 
-	if p.onExit != nil {
-		p.onExit(p.config.Name, err)
+	if handler != nil {
+		handler(p.config.Name, p.waitErr)
 	}
 }
 
@@ -184,9 +192,9 @@ func (m *Manager) Stop(name string) error {
 // stop stops the process gracefully.
 func (p *ManagedProcess) stop() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if p.info.State != StateRunning {
+		p.mu.Unlock()
 		return nil
 	}
 
@@ -195,28 +203,31 @@ func (p *ManagedProcess) stop() error {
 		if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
 			// Process might already be dead
 			if !errors.Is(err, os.ErrProcessDone) {
+				p.mu.Unlock()
 				return fmt.Errorf("failed to send SIGTERM: %w", err)
 			}
 		}
 	}
 
-	// Wait a bit for graceful shutdown
-	done := make(chan struct{})
-	go func() {
-		p.cmd.Wait()
-		close(done)
-	}()
+	// Release lock before waiting to avoid blocking
+	waitDone := p.waitDone
+	p.mu.Unlock()
 
+	// Wait for process to exit (monitor goroutine will close waitDone)
 	select {
-	case <-done:
+	case <-waitDone:
+		p.mu.Lock()
 		p.info.State = StateStopped
+		p.mu.Unlock()
 		return nil
 	case <-time.After(5 * time.Second):
 		// Force kill
+		p.mu.Lock()
 		if p.cmd.Process != nil {
 			p.cmd.Process.Kill()
 		}
 		p.info.State = StateStopped
+		p.mu.Unlock()
 		return nil
 	}
 }
