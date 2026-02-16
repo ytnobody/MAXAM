@@ -1,0 +1,42 @@
+name: PR Reviewer Check
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize]
+
+jobs:
+  check-reviewer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check reviewer is specified
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          echo "Checking PR body for reviewer specification..."
+
+          # Extract Reviewer section
+          # Looking for pattern: "- [x] @username" or "- [ ] @username" with actual username
+          if echo "$PR_BODY" | grep -E '## Reviewer' > /dev/null; then
+            echo "Found Reviewer section"
+
+            # Check if there's an actual reviewer specified (not just template placeholder)
+            # Match: "- [x] @actualname" or "- [ ] @actualname" where actualname is not empty/placeholder
+            if echo "$PR_BODY" | grep -E '\- \[[xX ]\] @[a-zA-Z0-9_-]+[^<]' > /dev/null; then
+              echo "✅ Reviewer is specified"
+              exit 0
+            else
+              echo "❌ Reviewer section found but no reviewer specified"
+              echo ""
+              echo "Please specify a reviewer in the PR description:"
+              echo "  - [ ] @reviewer-name"
+              echo ""
+              echo "See the reviewer selection guide in the PR template."
+              exit 1
+            fi
+          else
+            echo "❌ Reviewer section not found in PR body"
+            echo ""
+            echo "Please add a '## Reviewer (Required)' section with a reviewer specified."
+            exit 1
+          fi
