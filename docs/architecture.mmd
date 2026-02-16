@@ -1,0 +1,72 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4a90d9', 'primaryTextColor': '#fff', 'primaryBorderColor': '#2563eb', 'lineColor': '#64748b', 'secondaryColor': '#f1f5f9', 'tertiaryColor': '#e2e8f0'}}}%%
+
+graph TB
+    subgraph MAXAM["MAXAM System"]
+        subgraph UI["UI Layer"]
+            TUI["TUI<br/>(BubbleTea)"]
+        end
+
+        subgraph Core["Core Layer"]
+            Router["Router"]
+            Mode["Mode Manager"]
+            Workflow["Workflow"]
+            Config["Config"]
+        end
+
+        subgraph AgentLayer["Agent Layer"]
+            Pool["Agent Pool"]
+            subgraph Agents["Agents"]
+                Mei["Mei<br/>PM"]
+                Yuki["Yuki<br/>Backend"]
+                Rin["Rin<br/>Frontend"]
+                Shiori["Shiori<br/>Test/Docs"]
+                Priya["Priya<br/>Review/QA"]
+                Amara["Amara<br/>Analysis"]
+            end
+        end
+
+        subgraph Integration["Integration Layer"]
+            GitHub["GitHub<br/>Client"]
+            Slack["Slack<br/>Handler"]
+            Heartbeat["Heartbeat<br/>Monitor"]
+            Logger["Logger"]
+        end
+
+        Claude["Claude Code CLI"]
+    end
+
+    TUI --> Router
+    Router --> Pool
+    Mode --> Pool
+    Workflow --> Pool
+    Config --> Pool
+
+    Pool --> Mei
+    Pool --> Yuki
+    Pool --> Rin
+    Pool --> Shiori
+    Pool --> Priya
+    Pool --> Amara
+
+    Mei --> Claude
+    Yuki --> Claude
+    Rin --> Claude
+    Shiori --> Claude
+    Priya --> Claude
+    Amara --> Claude
+
+    GitHub --> Pool
+    Slack --> Pool
+    Heartbeat --> Pool
+
+    classDef uiLayer fill:#4a90d9,stroke:#2563eb,color:#fff
+    classDef coreLayer fill:#10b981,stroke:#059669,color:#fff
+    classDef agentLayer fill:#f59e0b,stroke:#d97706,color:#fff
+    classDef integrationLayer fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    classDef external fill:#64748b,stroke:#475569,color:#fff
+
+    class TUI uiLayer
+    class Router,Mode,Workflow,Config coreLayer
+    class Pool,Mei,Yuki,Rin,Shiori,Priya,Amara agentLayer
+    class GitHub,Slack,Heartbeat,Logger integrationLayer
+    class Claude external
