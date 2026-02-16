@@ -13,11 +13,12 @@ import (
 type EventType string
 
 const (
-	EventTypeIssue EventType = "issue"
-	EventTypePR    EventType = "pr"
+	EventTypeIssue      EventType = "issue"
+	EventTypePR         EventType = "pr"
+	EventTypeMergedPR   EventType = "merged_pr"
 )
 
-// Event represents a new Issue or PR creation event
+// Event represents a new Issue, PR creation, or PR merge event
 type Event struct {
 	Type      EventType
 	Number    int
@@ -25,6 +26,7 @@ type Event struct {
 	Author    string
 	URL       string
 	CreatedAt time.Time
+	MergedAt  *time.Time // Set only for merged PRs
 	Labels    []string
 	Body      string
 }
@@ -55,7 +57,7 @@ func NewEventWatcherWithSince(client *Client, since time.Time) *EventWatcher {
 	}
 }
 
-// CheckEvents fetches new Issue/PR events since last check
+// CheckEvents fetches new Issue/PR events and merged PRs since last check
 func (w *EventWatcher) CheckEvents(ctx context.Context) ([]Event, error) {
 	var events []Event
 
@@ -72,6 +74,13 @@ func (w *EventWatcher) CheckEvents(ctx context.Context) ([]Event, error) {
 		return nil, fmt.Errorf("fetch PRs: %w", err)
 	}
 	events = append(events, prs...)
+
+	// Fetch merged PRs (PR merge events)
+	mergedPRs, err := w.fetchMergedPRs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetch merged PRs: %w", err)
+	}
+	events = append(events, mergedPRs...)
 
 	// Update last check time
 	w.lastCheck = time.Now()
@@ -199,6 +208,70 @@ func (w *EventWatcher) fetchNewPRs(ctx context.Context) ([]Event, error) {
 	return events, nil
 }
 
+// fetchMergedPRs fetches PRs merged since lastCheck
+func (w *EventWatcher) fetchMergedPRs(ctx context.Context) ([]Event, error) {
+	opts := &github.PullRequestListOptions{
+		State:     "closed",
+		Sort:      "updated",
+		Direction: "desc",
+		ListOptions: github.ListOptions{
+			PerPage: 30,
+		},
+	}
+
+	prs, _, err := w.client.client.PullRequests.List(ctx, w.client.owner, w.client.repo, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	var events []Event
+	for _, pr := range prs {
+		// Only include merged PRs
+		if pr.MergedAt == nil {
+			continue
+		}
+
+		// Only if merged after lastCheck
+		if pr.MergedAt.Before(w.lastCheck) {
+			continue
+		}
+
+		id := fmt.Sprintf("merged-pr-%d", pr.GetNumber())
+
+		w.mu.RLock()
+		seen := w.seenIDs[id]
+		w.mu.RUnlock()
+
+		if seen {
+			continue
+		}
+
+		w.mu.Lock()
+		w.seenIDs[id] = true
+		w.mu.Unlock()
+
+		labels := make([]string, 0, len(pr.Labels))
+		for _, l := range pr.Labels {
+			labels = append(labels, l.GetName())
+		}
+
+		mergedTime := pr.MergedAt.Time
+		events = append(events, Event{
+			Type:      EventTypeMergedPR,
+			Number:    pr.GetNumber(),
+			Title:     pr.GetTitle(),
+			Author:    pr.GetUser().GetLogin(),
+			URL:       pr.GetHTMLURL(),
+			CreatedAt: pr.GetCreatedAt().Time,
+			MergedAt:  &mergedTime,
+			Labels:    labels,
+			Body:      pr.GetBody(),
+		})
+	}
+
+	return events, nil
+}
+
 // FormatEventNotification formats an event for display
 func FormatEventNotification(e Event) string {
 	switch e.Type {
@@ -206,6 +279,8 @@ func FormatEventNotification(e Event) string {
 		return fmt.Sprintf("📝 New Issue #%d: %s (by @%s)\n   %s", e.Number, e.Title, e.Author, e.URL)
 	case EventTypePR:
 		return fmt.Sprintf("🔀 New PR #%d: %s (by @%s)\n   %s", e.Number, e.Title, e.Author, e.URL)
+	case EventTypeMergedPR:
+		return fmt.Sprintf("✅ Merged PR #%d: %s (by @%s)\n   %s", e.Number, e.Title, e.Author, e.URL)
 	default:
 		return fmt.Sprintf("Event #%d: %s", e.Number, e.Title)
 	}
