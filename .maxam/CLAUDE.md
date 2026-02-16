@@ -51,6 +51,14 @@
 - `context.Context`でキャンセル可能に
 - 参考: PR #172（承認監視機能）
 
+#### ヘルスモニタリングパターン
+- `Monitor` struct + `HealthChecker` interface の組み合わせで拡張性確保
+- 定期監視ループは goroutine + ticker で実装
+- 失敗閾値（consecutive failures）超過で自動復旧トリガー
+- graceful shutdown は `context.Context` + `done` channel で実現
+- interface 分離により、テスト時のモック差し替えが容易
+- 参考: PR #344（ヘルスモニタリング機能）
+
 ### 2. チームフロー
 
 #### 報告フォーマット
