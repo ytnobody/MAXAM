@@ -109,6 +109,34 @@ func TestParse(t *testing.T) {
 			wantCmd:     CommandKill,
 			wantArgs:    "all",
 		},
+		{
+			name:        "/reset command",
+			input:       "/reset",
+			wantCommand: true,
+			wantCmd:     CommandReset,
+			wantArgs:    "",
+		},
+		{
+			name:        "/reset with agent",
+			input:       "/reset @mei",
+			wantCommand: true,
+			wantCmd:     CommandReset,
+			wantArgs:    "@mei",
+		},
+		{
+			name:        "/reset with multiple agents",
+			input:       "/reset @mei @yuki",
+			wantCommand: true,
+			wantCmd:     CommandReset,
+			wantArgs:    "@mei @yuki",
+		},
+		{
+			name:        "/reset all",
+			input:       "/reset all",
+			wantCommand: true,
+			wantCmd:     CommandReset,
+			wantArgs:    "all",
+		},
 	}
 
 	for _, tt := range tests {
