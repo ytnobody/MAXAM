@@ -13,9 +13,9 @@ import (
 type EventType string
 
 const (
-	EventTypeIssue      EventType = "issue"
-	EventTypePR         EventType = "pr"
-	EventTypeMergedPR   EventType = "merged_pr"
+	EventTypeIssue    EventType = "issue"
+	EventTypePR       EventType = "pr"
+	EventTypeMergedPR EventType = "merged_pr"
 )
 
 // Event represents a new Issue, PR creation, or PR merge event

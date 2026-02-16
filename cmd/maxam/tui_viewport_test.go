@@ -3,8 +3,8 @@ package main
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestWindowSizeMsg_MinimumDimensions(t *testing.T) {
@@ -45,7 +45,7 @@ func TestWindowSizeMsg_MinimumDimensions(t *testing.T) {
 			width:      5,
 			height:     3,
 			wantVPW:    5,
-			wantVPH:    1,  // 3 - 5 = -2 -> clamped to 1
+			wantVPH:    1, // 3 - 5 = -2 -> clamped to 1
 			wantInputW: 1, // 5 - 8 = -3 -> clamped to 1
 		},
 		{

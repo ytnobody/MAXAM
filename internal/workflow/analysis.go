@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ytnobody/MAXAM/internal/agent"
+	"github.com/ytnobody/MAXAM/internal/github"
 	"github.com/ytnobody/MAXAM/internal/logger"
 )
 
@@ -216,4 +217,25 @@ func (ac *AnalysisCycle) parseAnalysisResult(result string) *AnalysisResult {
 	}
 
 	return ar
+}
+
+// OnMergedPR handles analysis trigger when a PR is merged
+func (ac *AnalysisCycle) OnMergedPR(ctx context.Context, event github.Event) error {
+	if event.Type != github.EventTypeMergedPR {
+		return fmt.Errorf("invalid event type: expected merged PR")
+	}
+
+	fmt.Printf("[Amara] PR #%d merged: %s\n", event.Number, event.Title)
+
+	// Run analysis cycle triggered by PR merge
+	result, err := ac.Run(ctx)
+	if err != nil {
+		return fmt.Errorf("analysis failed: %w", err)
+	}
+
+	// Log PR merge analysis
+	fmt.Printf("[Amara] Analysis triggered by PR #%d merge completed\n", event.Number)
+	fmt.Println("[Amara] Report:", result.Report[:100]+"...")
+
+	return nil
 }
