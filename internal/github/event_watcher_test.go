@@ -50,6 +50,10 @@ func TestEventType(t *testing.T) {
 	if EventTypePR != "pr" {
 		t.Errorf("EventTypePR = %q, want %q", EventTypePR, "pr")
 	}
+
+	if EventTypeMergedPR != "merged_pr" {
+		t.Errorf("EventTypeMergedPR = %q, want %q", EventTypeMergedPR, "merged_pr")
+	}
 }
 
 func TestFormatEventNotification(t *testing.T) {
@@ -79,6 +83,17 @@ func TestFormatEventNotification(t *testing.T) {
 				URL:    "https://github.com/test/repo/pull/123",
 			},
 			contains: []string{"🔀", "PR #123", "New feature", "@developer"},
+		},
+		{
+			name: "Merged PR notification",
+			event: Event{
+				Type:   EventTypeMergedPR,
+				Number: 456,
+				Title:  "Merged feature",
+				Author: "contributor",
+				URL:    "https://github.com/test/repo/pull/456",
+			},
+			contains: []string{"✅", "Merged PR #456", "Merged feature", "@contributor"},
 		},
 	}
 
