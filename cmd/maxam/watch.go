@@ -9,7 +9,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ytnobody/MAXAM/internal/agent"
 	"github.com/ytnobody/MAXAM/internal/github"
+	"github.com/ytnobody/MAXAM/internal/logger"
+	"github.com/ytnobody/MAXAM/internal/workflow"
 )
 
 func runWatch() {
@@ -62,6 +65,16 @@ func runWatch() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
+	// Initialize analysis cycle (optional, only if agents are available)
+	var analysisCycle *workflow.AnalysisCycle
+	if ags := agent.NewAgents("."); ags != nil {
+		logMgr := logger.NewManager(".", ".")
+		analysisCycle = workflow.NewAnalysisCycle(ags, logMgr, ".")
+		fmt.Println("✅ Analysis cycle enabled (will trigger on PR merge)")
+	} else {
+		fmt.Println("ℹ️  Analysis cycle not enabled (agents unavailable)")
+	}
+
 	fmt.Printf("🔍 Watching %s/%s for new Issues/PRs (interval: %s)\n", owner, repo, interval)
 	fmt.Println("Press Ctrl+C to stop")
 	fmt.Println()
@@ -92,7 +105,15 @@ func runWatch() {
 			for _, e := range events {
 				fmt.Println(github.FormatEventNotification(e))
 				fmt.Println()
+
+				// Trigger analysis on PR merge (if enabled)
+				if e.Type == github.EventTypeMergedPR && analysisCycle != nil {
+					if err := analysisCycle.OnMergedPR(ctx, e); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: analysis trigger failed: %v\n", err)
+					}
+				}
 			}
 		}
 	}
 }
+
