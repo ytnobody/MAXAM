@@ -104,6 +104,17 @@ func (m *Members) Names() []string {
 	return result
 }
 
+// FindByRoleContains returns the name of the first member whose role contains the given keyword
+// Returns empty string if no member is found
+func (m *Members) FindByRoleContains(keyword string) string {
+	for name, member := range m.members {
+		if strings.Contains(member.Role, keyword) {
+			return name
+		}
+	}
+	return ""
+}
+
 // ParseMemberTable extracts members from CLAUDE.md table format
 // Expects format:
 // | Name | Role |

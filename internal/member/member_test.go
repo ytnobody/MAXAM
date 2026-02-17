@@ -123,6 +123,35 @@ No table here.
 	}
 }
 
+func TestFindByRoleContains(t *testing.T) {
+	m := &Members{
+		members: map[string]*Member{
+			"mei":   {Name: "mei", Role: "PM + アーキテクト"},
+			"yuki":  {Name: "yuki", Role: "バックエンド + インフラ"},
+			"amara": {Name: "amara", Role: "分析 + 法的基礎知識 + オーナーフェイシング"},
+		},
+	}
+
+	tests := []struct {
+		keyword  string
+		expected string
+	}{
+		{"オーナーフェイシング", "amara"},
+		{"PM", "mei"},
+		{"インフラ", "yuki"},
+		{"存在しないロール", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.keyword, func(t *testing.T) {
+			got := m.FindByRoleContains(tt.keyword)
+			if got != tt.expected {
+				t.Errorf("FindByRoleContains(%q) = %q, want %q", tt.keyword, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestExtractShortName(t *testing.T) {
 	tests := []struct {
 		fullName  string
