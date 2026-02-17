@@ -302,6 +302,9 @@ func initialTuiModel(workDir string) tuiModel {
 			taskStatusFetcher = taskstatus.NewFetcher(client.GetUnderlyingClient(), ghCfg.Owner, ghCfg.Repo)
 		}
 	}
+	// Setup members first (needed for default agent detection)
+	members := member.NewMembers(workDir)
+
 	routerAgents := make([]router.AgentInfo, len(cfg.Agents))
 	agentNames := make([]string, len(cfg.Agents))
 	for i, agentCfg := range cfg.Agents {
@@ -311,13 +314,20 @@ func initialTuiModel(workDir string) tuiModel {
 		}
 		agentNames[i] = agentCfg.Name
 	}
-	agentRouter := router.New(routerAgents, cfg.DefaultAgent)
+
+	// Determine default agent: role-based (フェイシング) > config > fallback
+	defaultAgent := members.FindByRoleContains("フェイシング")
+	if defaultAgent == "" {
+		defaultAgent = cfg.DefaultAgent
+	}
+	if defaultAgent == "" {
+		defaultAgent = "mei" // final fallback
+	}
+	agentRouter := router.New(routerAgents, defaultAgent)
 
 	// Setup mention checker with agent names from config + owner
 	mentionTargets := append(agentNames, "オーナー")
 	mention.SetDefaultChecker(mention.NewChecker(mentionTargets))
-
-	members := member.NewMembers(workDir)
 
 	// Setup agents and worker pool
 	agents := agent.NewAgents(workDir)
@@ -1632,7 +1642,12 @@ func (m *tuiModel) detectAgent(text string) string {
 	if len(agents) > 0 {
 		return agents[0]
 	}
-	// configのdefault_agentを使用、未設定なら最初のエージェント
+	// Fallback: role-based (フェイシング) > config > first agent > mei
+	if m.members != nil {
+		if facing := m.members.FindByRoleContains("フェイシング"); facing != "" {
+			return facing
+		}
+	}
 	if m.config != nil && m.config.DefaultAgent != "" {
 		return m.config.DefaultAgent
 	}
