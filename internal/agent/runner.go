@@ -167,7 +167,7 @@ func (r *Runner) RunWithModel(ctx context.Context, prompt string, model Model) (
 		"--permission-mode", "bypassPermissions",
 	}
 
-	if model != ModelDefault {
+	if model != "" && model != ModelDefault {
 		args = append(args, "--model", string(model))
 	}
 
