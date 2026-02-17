@@ -11,7 +11,7 @@
 | Rin Sato | フロントエンド + バックエンド |
 | Shiori Tanaka | テスト + ドキュメント |
 | Priya Sharma | レビュー + セキュリティ + QA |
-| Amara Okonkwo | 分析 + 法的基礎知識 |
+| Amara Okonkwo | 分析 + 法的基礎知識 + フェイシング |
 
 ## 学習事項
 
