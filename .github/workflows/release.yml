@@ -43,7 +43,6 @@ jobs:
             GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w" -o "dist/${PKG_NAME}/maxam" ./cmd/maxam
 
             cp CLAUDE.md "dist/${PKG_NAME}/"
-            cp -r agents "dist/${PKG_NAME}/"
 
             cd dist
             zip -r "${PKG_NAME}.zip" "${PKG_NAME}"
