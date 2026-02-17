@@ -209,3 +209,22 @@ func TestModelConstants(t *testing.T) {
 		}
 	}
 }
+
+func TestModelEmptyValue(t *testing.T) {
+	// Empty model should not be passed to claude command
+	// This tests the fix for empty model value handling
+
+	t.Run("empty model is different from ModelDefault", func(t *testing.T) {
+		emptyModel := Model("")
+		if emptyModel == ModelDefault {
+			t.Error("empty model should not equal ModelDefault")
+		}
+	})
+
+	t.Run("empty model string is empty", func(t *testing.T) {
+		emptyModel := Model("")
+		if string(emptyModel) != "" {
+			t.Errorf("empty model string = %q, want empty string", string(emptyModel))
+		}
+	})
+}

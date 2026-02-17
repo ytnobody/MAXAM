@@ -128,7 +128,7 @@ func TestFindByRoleContains(t *testing.T) {
 		members: map[string]*Member{
 			"mei":   {Name: "mei", Role: "PM + アーキテクト"},
 			"yuki":  {Name: "yuki", Role: "バックエンド + インフラ"},
-			"amara": {Name: "amara", Role: "分析 + 法的基礎知識 + オーナーフェイシング"},
+			"amara": {Name: "amara", Role: "分析 + 法的基礎知識 + フェイシング"},
 		},
 	}
 
@@ -136,7 +136,7 @@ func TestFindByRoleContains(t *testing.T) {
 		keyword  string
 		expected string
 	}{
-		{"オーナーフェイシング", "amara"},
+		{"フェイシング", "amara"},
 		{"PM", "mei"},
 		{"インフラ", "yuki"},
 		{"存在しないロール", ""},

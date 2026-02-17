@@ -128,8 +128,8 @@ func runChat() {
 
 	members := member.NewMembers(workDir)
 
-	// Determine default agent: role-based (オーナーフェイシング) > config > fallback
-	defaultAgent := members.FindByRoleContains("オーナーフェイシング")
+	// Determine default agent: role-based (フェイシング) > config > fallback
+	defaultAgent := members.FindByRoleContains("フェイシング")
 	if defaultAgent == "" {
 		defaultAgent = cfg.DefaultAgent
 	}
