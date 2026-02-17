@@ -295,10 +295,8 @@ func (s *ChatSession) runTeamChat() {
 		}
 
 		// Call each mentioned agent in order
-		fmt.Fprintf(os.Stderr, "[DEBUG] mentioned agents: %v\n", mentioned)
 		for _, agentName := range mentioned {
 			runner, ok := s.agents.Get(agentName)
-			fmt.Fprintf(os.Stderr, "[DEBUG] agents.Get(%q) ok=%v\n", agentName, ok)
 			if !ok {
 				fmt.Printf("\n(%s is not available)\n", agentName)
 				continue
