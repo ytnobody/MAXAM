@@ -1632,6 +1632,13 @@ func (m *tuiModel) detectAgent(text string) string {
 	if len(agents) > 0 {
 		return agents[0]
 	}
+	// configのdefault_agentを使用、未設定なら最初のエージェント
+	if m.config != nil && m.config.DefaultAgent != "" {
+		return m.config.DefaultAgent
+	}
+	if m.config != nil && len(m.config.Agents) > 0 {
+		return m.config.Agents[0].Name
+	}
 	return "mei"
 }
 

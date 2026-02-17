@@ -1,5 +1,5 @@
 version: "1"
-default_agent: mei
+default_agent: amara
 github:
   owner: "ytnobody"
   repo: "MAXAM"
@@ -23,4 +23,4 @@ agents:
       model: haiku
     - name: amara
       full_name: amara
-      role: 分析 + 法的基礎知識
+      role: 分析 + 法的基礎知識 + フェイシング
