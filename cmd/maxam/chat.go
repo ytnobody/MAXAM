@@ -38,6 +38,7 @@ type ChatSession struct {
 	mentionCheck bool
 	daemon       bool
 	wsServer     *ws.Server
+	defaultAgent string
 }
 
 type chatMessage struct {
@@ -125,14 +126,26 @@ func runChat() {
 		os.Exit(1)
 	}
 
+	members := member.NewMembers(workDir)
+
+	// Determine default agent: role-based (オーナーフェイシング) > config > fallback
+	defaultAgent := members.FindByRoleContains("オーナーフェイシング")
+	if defaultAgent == "" {
+		defaultAgent = cfg.DefaultAgent
+	}
+	if defaultAgent == "" {
+		defaultAgent = "mei" // final fallback
+	}
+
 	session := &ChatSession{
 		agents:       agent.NewAgents(workDir),
-		members:      member.NewMembers(workDir),
+		members:      members,
 		logMgr:       logger.NewManagerWithLevel(logger.GetDefaultLogDir(), workDir, logger.ParseLogLevel(cfg.GetLogLevel())),
 		workDir:      workDir,
 		history:      make([]chatMessage, 0),
 		mentionCheck: flags.mentionCheck,
 		daemon:       flags.daemon,
+		defaultAgent: defaultAgent,
 	}
 	defer session.logMgr.Close()
 
@@ -248,7 +261,7 @@ func (s *ChatSession) runTeamChat() {
 	if interactive {
 		fmt.Println("Chat with MAXAM Team")
 		fmt.Println("Mention members with @name. Example: @yuki, @priya")
-		fmt.Println("Default: Mei will respond if no mention.")
+		fmt.Printf("Default: %s will respond if no mention.\n", s.members.GetFullName(s.defaultAgent))
 		fmt.Println("Type 'exit' to quit")
 		fmt.Println(strings.Repeat("-", 50))
 	}
@@ -277,8 +290,8 @@ func (s *ChatSession) runTeamChat() {
 		// Detect all mentioned agents
 		mentioned := s.members.DetectMentions(input)
 		if len(mentioned) == 0 {
-			// Default to Mei if no one is mentioned
-			mentioned = []string{"mei"}
+			// Default to configured agent if no one is mentioned
+			mentioned = []string{s.defaultAgent}
 		}
 
 		// Call each mentioned agent in order
@@ -371,7 +384,7 @@ func (s *ChatSession) processTeamMessage(input string) {
 	// Detect all mentioned agents
 	mentioned := s.members.DetectMentions(input)
 	if len(mentioned) == 0 {
-		mentioned = []string{"mei"}
+		mentioned = []string{s.defaultAgent}
 	}
 
 	// Call each mentioned agent in order
