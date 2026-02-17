@@ -113,7 +113,7 @@ func (r *Runner) Run(ctx context.Context, prompt string) (string, error) {
 		"--permission-mode", "bypassPermissions",
 	}
 
-	// Use agent's configured model if set (empty string means use default)
+	// Use agent's configured model if set (skip if empty or default)
 	if r.Model != "" && r.Model != ModelDefault {
 		args = append(args, "--model", string(r.Model))
 	}
