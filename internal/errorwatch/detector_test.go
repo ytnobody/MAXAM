@@ -61,6 +61,37 @@ func TestIsRecoverableError(t *testing.T) {
 			errMsg:   "syntax error: unexpected token",
 			expected: false,
 		},
+		// LLM API errors
+		{
+			name:     "rate limit error",
+			errMsg:   "rate limit exceeded",
+			expected: true,
+		},
+		{
+			name:     "rate_limit with underscore",
+			errMsg:   "error: rate_limit_exceeded",
+			expected: true,
+		},
+		{
+			name:     "429 error",
+			errMsg:   "HTTP 429: Too Many Requests",
+			expected: true,
+		},
+		{
+			name:     "503 error",
+			errMsg:   "503 Service Unavailable",
+			expected: true,
+		},
+		{
+			name:     "overloaded",
+			errMsg:   "The model is currently overloaded",
+			expected: true,
+		},
+		{
+			name:     "capacity",
+			errMsg:   "No capacity available",
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {

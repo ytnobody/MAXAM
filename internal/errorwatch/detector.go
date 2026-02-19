@@ -9,11 +9,23 @@ import (
 
 // ErrorPatterns defines the patterns to detect recoverable agent errors.
 var ErrorPatterns = []string{
+	// Context and timeout errors
 	"context deadline exceeded",
 	"context canceled",
 	"timeout",
+	// Connection errors
 	"connection refused",
 	"connection reset",
+	// LLM API errors
+	"rate limit",
+	"rate_limit",
+	"too many requests",
+	"429",
+	"503",
+	"service unavailable",
+	"overloaded",
+	"capacity",
+	// General errors that may be recoverable
 	"exit status 1",
 }
 
