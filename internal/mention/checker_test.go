@@ -282,3 +282,164 @@ func TestFormatSystemWarning(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckWithSender(t *testing.T) {
+	testAgents := []string{"mei", "yuki", "rin", "shiori", "priya", "amara", "yuki-1", "yuki-2"}
+	checker := NewChecker(testAgents)
+
+	tests := []struct {
+		name            string
+		message         string
+		sender          string
+		wantSelfMention bool
+		wantMention     bool
+	}{
+		// セルフメンション検知ケース
+		{
+			name:            "self mention - exact match",
+			message:         "@yuki これやります",
+			sender:          "yuki",
+			wantSelfMention: true,
+			wantMention:     true,
+		},
+		{
+			name:            "self mention - case insensitive",
+			message:         "@Yuki これやります",
+			sender:          "yuki",
+			wantSelfMention: true,
+			wantMention:     true,
+		},
+		{
+			name:            "self mention - sender uppercase",
+			message:         "@yuki これやります",
+			sender:          "Yuki",
+			wantSelfMention: true,
+			wantMention:     true,
+		},
+		{
+			name:            "self mention - instance format",
+			message:         "@yuki-1 これやります",
+			sender:          "yuki",
+			wantSelfMention: true,
+			wantMention:     true,
+		},
+		{
+			name:            "self mention - sender is instance",
+			message:         "@yuki これやります",
+			sender:          "yuki-1",
+			wantSelfMention: true,
+			wantMention:     true,
+		},
+		{
+			name:            "self mention - both instance",
+			message:         "@yuki-1 これやります",
+			sender:          "yuki-1",
+			wantSelfMention: true,
+			wantMention:     true,
+		},
+
+		// セルフメンションではないケース
+		{
+			name:            "not self mention - different person",
+			message:         "@priya レビューお願い",
+			sender:          "yuki",
+			wantSelfMention: false,
+			wantMention:     true,
+		},
+		{
+			name:            "not self mention - multiple mentions but not self",
+			message:         "@mei @priya 確認お願い",
+			sender:          "yuki",
+			wantSelfMention: false,
+			wantMention:     true,
+		},
+
+		// 複数メンションでセルフメンション混在
+		{
+			name:            "mixed mentions - self included",
+			message:         "@yuki @priya 一緒に確認する",
+			sender:          "yuki",
+			wantSelfMention: true,
+			wantMention:     true,
+		},
+
+		// メンションなし
+		{
+			name:            "no mention",
+			message:         "これお願い",
+			sender:          "yuki",
+			wantSelfMention: false,
+			wantMention:     false,
+		},
+
+		// 空メッセージ
+		{
+			name:            "empty message",
+			message:         "",
+			sender:          "yuki",
+			wantSelfMention: false,
+			wantMention:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := checker.CheckWithSender(tt.message, tt.sender)
+
+			if result.IsSelfMention != tt.wantSelfMention {
+				t.Errorf("CheckWithSender(%q, %q).IsSelfMention = %v, want %v",
+					tt.message, tt.sender, result.IsSelfMention, tt.wantSelfMention)
+			}
+			if result.HasMention != tt.wantMention {
+				t.Errorf("CheckWithSender(%q, %q).HasMention = %v, want %v",
+					tt.message, tt.sender, result.HasMention, tt.wantMention)
+			}
+		})
+	}
+}
+
+func TestCheckWithSenderPackageLevel(t *testing.T) {
+	// Save original
+	original := defaultChecker
+	defer func() { defaultChecker = original }()
+
+	// Set up test checker
+	testAgents := []string{"mei", "yuki", "rin"}
+	SetDefaultChecker(NewChecker(testAgents))
+
+	// Test package-level function
+	result := CheckWithSender("@yuki やります", "yuki")
+	if !result.IsSelfMention {
+		t.Error("Package-level CheckWithSender should detect self-mention")
+	}
+
+	result = CheckWithSender("@mei お願い", "yuki")
+	if result.IsSelfMention {
+		t.Error("Package-level CheckWithSender should not detect self-mention for different person")
+	}
+}
+
+func TestFormatSelfMentionWarning(t *testing.T) {
+	tests := []struct {
+		sender   string
+		expected string
+	}{
+		{
+			sender:   "yuki",
+			expected: "[System] @yuki 自分自身へのメンションは不要です。宛先を確認してください",
+		},
+		{
+			sender:   "Priya",
+			expected: "[System] @Priya 自分自身へのメンションは不要です。宛先を確認してください",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.sender, func(t *testing.T) {
+			result := FormatSelfMentionWarning(tt.sender)
+			if result != tt.expected {
+				t.Errorf("FormatSelfMentionWarning(%q) = %q, want %q", tt.sender, result, tt.expected)
+			}
+		})
+	}
+}
