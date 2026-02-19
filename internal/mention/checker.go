@@ -8,8 +8,9 @@ import (
 
 // Result represents the result of a mention check
 type Result struct {
-	HasMention   bool // メンションが含まれているか
-	NeedsWarning bool // 警告が必要か（メンションなし）
+	HasMention    bool // メンションが含まれているか
+	NeedsWarning  bool // 警告が必要か（メンションなし）
+	IsSelfMention bool // セルフメンションか（自分で自分にメンション）
 }
 
 // Checker detects mention leaks in messages
@@ -109,4 +110,62 @@ func FormatWarning() string {
 // FormatSystemWarning returns a system warning message for chat display
 func FormatSystemWarning(sender string) string {
 	return "[System] @" + sender + " メンションが漏れている可能性があります。宛先を確認してください"
+}
+
+// CheckWithSender analyzes a message for mention leaks and self-mentions
+// sender is the name of the person sending the message (without @)
+func (c *Checker) CheckWithSender(message, sender string) Result {
+	// まず通常のチェックを実行
+	result := c.Check(message)
+
+	// 空メッセージまたはメンションなしの場合はそのまま返す
+	if strings.TrimSpace(message) == "" || !result.HasMention {
+		return result
+	}
+
+	// セルフメンション検知
+	// @sender または @sender-{instance} 形式を検出
+	senderLower := strings.ToLower(sender)
+
+	// メンションを抽出して確認
+	matches := c.mentionPattern.FindAllString(message, -1)
+	for _, match := range matches {
+		// @を取り除いてメンション名を取得
+		mentionedName := strings.TrimPrefix(match, "@")
+		mentionedLower := strings.ToLower(mentionedName)
+
+		// 完全一致チェック（大文字小文字無視）
+		if mentionedLower == senderLower {
+			result.IsSelfMention = true
+			break
+		}
+
+		// インスタンス形式チェック: sender-1, sender-2 など
+		// 例: yuki が @yuki-1 にメンション → セルフメンション
+		if strings.HasPrefix(mentionedLower, senderLower+"-") {
+			result.IsSelfMention = true
+			break
+		}
+
+		// 逆パターン: yuki-1 が @yuki にメンション → セルフメンション
+		if strings.HasPrefix(senderLower, mentionedLower+"-") {
+			result.IsSelfMention = true
+			break
+		}
+	}
+
+	return result
+}
+
+// CheckWithSenderPackageLevel analyzes a message using the default checker with sender info
+func CheckWithSender(message, sender string) Result {
+	if defaultChecker == nil {
+		defaultChecker = NewChecker([]string{})
+	}
+	return defaultChecker.CheckWithSender(message, sender)
+}
+
+// FormatSelfMentionWarning returns a warning message for self-mention
+func FormatSelfMentionWarning(sender string) string {
+	return "[System] @" + sender + " 自分自身へのメンションは不要です。宛先を確認してください"
 }
