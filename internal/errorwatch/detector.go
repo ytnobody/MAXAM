@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+// SelfMentionError is the error message used when self-mention is detected.
+// Use this constant when triggering shock functionality from self-mention detection.
+const SelfMentionError = "self-mention detected"
+
 // ErrorPatterns defines the patterns to detect recoverable agent errors.
 var ErrorPatterns = []string{
 	// Context and timeout errors
@@ -27,6 +31,8 @@ var ErrorPatterns = []string{
 	"capacity",
 	// General errors that may be recoverable
 	"exit status 1",
+	// Self-mention violations (triggers shock functionality)
+	SelfMentionError,
 }
 
 // Detector detects error patterns and manages follow-up cooldowns.
@@ -130,4 +136,16 @@ func (d *Detector) IsAgentInAutoMode(agentName string) bool {
 // ResetAgentMode resets an agent to normal mode.
 func (d *Detector) ResetAgentMode(agentName string) {
 	d.modeManager.SwitchToNormal(agentName)
+}
+
+// IsSelfMentionError checks if the error message indicates a self-mention violation.
+func IsSelfMentionError(errMsg string) bool {
+	lower := strings.ToLower(errMsg)
+	return strings.Contains(lower, SelfMentionError)
+}
+
+// FormatSelfMentionError creates a formatted error message for self-mention detection.
+// This message will be recognized by IsRecoverableError and trigger the shock functionality.
+func FormatSelfMentionError(agentName string) string {
+	return SelfMentionError + ": " + agentName
 }
