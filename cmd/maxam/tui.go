@@ -556,6 +556,11 @@ type heartbeatEventMsg struct {
 // heartbeatTickMsg triggers periodic heartbeat check processing
 type heartbeatTickMsg struct{}
 
+// issueWatcherNotifyMsg is sent when unattended issues are detected
+type issueWatcherNotifyMsg struct {
+	count int
+}
+
 func (m tuiModel) Init() tea.Cmd {
 	// Start worker pool
 	if m.workerPool != nil {
@@ -581,6 +586,10 @@ func (m tuiModel) Init() tea.Cmd {
 	// Start task status fetching
 	if m.taskStatusFetcher != nil {
 		cmds = append(cmds, m.fetchTaskStatus(), m.tickTaskStatus())
+	}
+	// Start issue watcher (3 min interval for unattended issue detection)
+	if m.ghClient != nil {
+		cmds = append(cmds, m.startIssueWatcher())
 	}
 	return tea.Batch(cmds...)
 }
@@ -612,6 +621,37 @@ func (m tuiModel) processHeartbeatEvents() tea.Cmd {
 				return heartbeatTickMsg{}
 			}
 		}
+	}
+}
+
+// startIssueWatcher starts periodic issue checking (3 min interval)
+func (m tuiModel) startIssueWatcher() tea.Cmd {
+	return m.tickIssueCheck()
+}
+
+// tickIssueCheck returns a command that triggers issue check every 3 minutes
+func (m tuiModel) tickIssueCheck() tea.Cmd {
+	return tea.Tick(3*time.Minute, func(t time.Time) tea.Msg {
+		return issueCheckTickMsg{}
+	})
+}
+
+// issueCheckTickMsg triggers periodic issue checking
+type issueCheckTickMsg struct{}
+
+// checkIssues fetches open issue count and notifies if any
+func (m tuiModel) checkIssues() tea.Cmd {
+	return func() tea.Msg {
+		if m.ghClient == nil {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		count, err := m.ghClient.CountOpenIssues(ctx)
+		if err != nil || count == 0 {
+			return nil
+		}
+		return issueWatcherNotifyMsg{count: count}
 	}
 }
 
@@ -1084,6 +1124,23 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case heartbeatTickMsg:
 		// Periodic tick - just keep polling for events
 		return m, m.processHeartbeatEvents()
+
+	case issueCheckTickMsg:
+		// Periodic issue check - fetch and notify
+		return m, tea.Batch(m.checkIssues(), m.tickIssueCheck())
+
+	case issueWatcherNotifyMsg:
+		// Unattended open issues detected - notify PM (mei by default)
+		pmAgent := m.config.DefaultAgent
+		if pmAgent == "" {
+			pmAgent = "mei"
+		}
+		m.messages = append(m.messages, tuiMessage{
+			role:    "system",
+			content: fmt.Sprintf("📋 オープンなIssue一覧:\n  未着手のIssueが %d 件あります\n\n@%s 着手されていないIssueがあります。確認をお願いします。", msg.count, pmAgent),
+		})
+		m.updateViewport()
+		return m, nil
 
 	case agentResponseMsg:
 		// エージェントの処理状態をクリア
