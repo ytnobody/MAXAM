@@ -328,6 +328,11 @@ func (w *Worker) handleTask(req TaskRequest) {
 // SessionTimeoutCallback is called when a worker's session times out
 type SessionTimeoutCallback func(workerName string)
 
+// SessionRestartEvent represents a session restart notification
+type SessionRestartEvent struct {
+	WorkerName string
+}
+
 // Pool manages multiple workers
 type Pool struct {
 	workers map[string]*Worker
@@ -338,16 +343,26 @@ type Pool struct {
 	monitorCancel    context.CancelFunc
 	monitorWg        sync.WaitGroup
 	onSessionTimeout SessionTimeoutCallback
+
+	// Session restart notification channel for TUI integration
+	restartNotifyChan chan SessionRestartEvent
 }
 
 // NewPool creates a new worker pool
 func NewPool() *Pool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Pool{
-		workers:       make(map[string]*Worker),
-		monitorCtx:    ctx,
-		monitorCancel: cancel,
+		workers:           make(map[string]*Worker),
+		monitorCtx:        ctx,
+		monitorCancel:     cancel,
+		restartNotifyChan: make(chan SessionRestartEvent, 10),
 	}
+}
+
+// GetRestartNotifyChannel returns the channel for session restart notifications
+// TUI can subscribe to this channel to receive restart events
+func (p *Pool) GetRestartNotifyChannel() <-chan SessionRestartEvent {
+	return p.restartNotifyChan
 }
 
 // SetSessionTimeoutCallback sets the callback for session timeout events
@@ -401,6 +416,13 @@ func (p *Pool) checkAndRestartExpiredSessions() {
 		// Notify callback if set
 		if callback != nil {
 			callback(name)
+		}
+
+		// Send restart notification to TUI (non-blocking)
+		select {
+		case p.restartNotifyChan <- SessionRestartEvent{WorkerName: name}:
+		default:
+			// Channel full, skip notification
 		}
 	}
 }

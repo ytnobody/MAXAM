@@ -227,6 +227,9 @@ type tuiModel struct {
 	// WebSocket server and client for chat communication
 	wsServer *ws.Server
 	wsClient *ws.TUIClient
+
+	// Session restart tracking: maps agent name to last prompt for retry
+	lastAgentPrompt map[string]string
 }
 
 type agentResponseMsg struct {
@@ -241,6 +244,11 @@ type agentResponseMsg struct {
 // analysisTickMsg は1時間ごとの軽量分析トリガー
 type analysisTickMsg struct {
 	time time.Time
+}
+
+// sessionRestartMsg is sent when a worker session is restarted after timeout
+type sessionRestartMsg struct {
+	workerName string
 }
 
 const maxChainDepth = 1000                // 最大連鎖数
@@ -499,6 +507,7 @@ func initialTuiModel(workDir string) tuiModel {
 		taskStatusFetcher:   taskStatusFetcher,
 		wsServer:            wsServer,
 		wsClient:            wsClient,
+		lastAgentPrompt:     make(map[string]string),
 	}
 }
 
@@ -599,6 +608,10 @@ func (m tuiModel) Init() tea.Cmd {
 	if m.ghClient != nil {
 		cmds = append(cmds, m.startIssueWatcher())
 	}
+	// Start session restart notification listener
+	if m.workerPool != nil {
+		cmds = append(cmds, m.listenSessionRestarts())
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -629,6 +642,18 @@ func (m tuiModel) processHeartbeatEvents() tea.Cmd {
 				return heartbeatTickMsg{}
 			}
 		}
+	}
+}
+
+// listenSessionRestarts listens for session restart notifications from worker pool
+func (m tuiModel) listenSessionRestarts() tea.Cmd {
+	return func() tea.Msg {
+		if m.workerPool == nil {
+			return nil
+		}
+		ch := m.workerPool.GetRestartNotifyChannel()
+		event := <-ch
+		return sessionRestartMsg{workerName: event.WorkerName}
 	}
 }
 
@@ -1133,6 +1158,36 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Periodic tick - just keep polling for events
 		return m, m.processHeartbeatEvents()
 
+	case sessionRestartMsg:
+		// Session was restarted after timeout
+		// Add system notification message
+		m.messages = append(m.messages, tuiMessage{
+			role:    "system",
+			content: fmt.Sprintf("🔄 セッション再起動: %s のセッションがタイムアウトにより再起動されました", msg.workerName),
+		})
+		m.updateViewport()
+
+		// Retry with the last prompt if available
+		var cmds []tea.Cmd
+		if lastPrompt, ok := m.lastAgentPrompt[msg.workerName]; ok && lastPrompt != "" {
+			// Clear the saved prompt to avoid infinite retry
+			delete(m.lastAgentPrompt, msg.workerName)
+
+			m.messages = append(m.messages, tuiMessage{
+				role:    "system",
+				content: fmt.Sprintf("📩 %s への最後のリクエストを再送信します...", msg.workerName),
+			})
+			m.processingAgents[msg.workerName] = true
+			m.updateViewport()
+
+			// Re-send the last prompt
+			cmds = append(cmds, m.runAgentAsync(lastPrompt, msg.workerName, 0))
+		}
+
+		// Continue listening for restart events
+		cmds = append(cmds, m.listenSessionRestarts())
+		return m, tea.Batch(cmds...)
+
 	case issueCheckTickMsg:
 		// Periodic issue check - only active in auto mode
 		if m.modeManager != nil && m.modeManager.Current() == config.ModeAuto {
@@ -1343,6 +1398,10 @@ func (m *tuiModel) runAgentAsync(input string, targetAgent string, depth int) te
 		// Try to use worker pool first
 		if m.workerPool != nil {
 			if w, ok := m.workerPool.Get(agentName); ok {
+				// Save original input for potential retry after session restart
+				// Store input (not built prompt) so re-send will rebuild with fresh context
+				m.lastAgentPrompt[agentName] = input
+
 				responseChan := make(chan worker.ChatResponse, 1)
 				w.SendChat(prompt, responseChan)
 
