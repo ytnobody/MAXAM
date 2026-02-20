@@ -92,6 +92,22 @@ func TestIsRecoverableError(t *testing.T) {
 			errMsg:   "No capacity available",
 			expected: true,
 		},
+		// Self-mention errors (triggers shock functionality)
+		{
+			name:     "self-mention detected",
+			errMsg:   SelfMentionError,
+			expected: true,
+		},
+		{
+			name:     "self-mention with context",
+			errMsg:   "agent error: self-mention detected for yuki",
+			expected: true,
+		},
+		{
+			name:     "self-mention case insensitive",
+			errMsg:   "SELF-MENTION DETECTED",
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {
