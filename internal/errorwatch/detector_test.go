@@ -92,6 +92,17 @@ func TestIsRecoverableError(t *testing.T) {
 			errMsg:   "No capacity available",
 			expected: true,
 		},
+		// Self-mention errors
+		{
+			name:     "self mention error",
+			errMsg:   "[SELF_MENTION] agent yuki mentioned self: [@yuki]",
+			expected: true,
+		},
+		{
+			name:     "self mention error with prefix",
+			errMsg:   "error: [SELF_MENTION] agent yuki mentioned self",
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {

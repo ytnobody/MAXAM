@@ -53,6 +53,11 @@ func DefaultDetector() *Detector {
 
 // IsRecoverableError checks if the error message matches known recoverable patterns.
 func IsRecoverableError(errMsg string) bool {
+	// Check for self-mention error
+	if IsSelfMentionError(errMsg) {
+		return true
+	}
+
 	lower := strings.ToLower(errMsg)
 	for _, pattern := range ErrorPatterns {
 		if strings.Contains(lower, pattern) {
