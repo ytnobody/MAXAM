@@ -1138,17 +1138,22 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.checkIssues(), m.tickIssueCheck())
 
 	case issueWatcherNotifyMsg:
-		// Unattended open issues detected - notify PM (mei by default)
+		// Unattended open issues detected - notify and invoke amara to analyze
 		pmAgent := m.config.DefaultAgent
 		if pmAgent == "" {
 			pmAgent = "mei"
 		}
+		systemMsg := fmt.Sprintf("📋 オープンなIssue一覧:\n  未着手のIssueが %d 件あります\n\n@amara 着手されていないIssueがあります。確認をお願いします。", msg.count)
 		m.messages = append(m.messages, tuiMessage{
 			role:    "system",
-			content: fmt.Sprintf("📋 オープンなIssue一覧:\n  未着手のIssueが %d 件あります\n\n@%s 着手されていないIssueがあります。確認をお願いします。", msg.count, pmAgent),
+			content: systemMsg,
 		})
 		m.updateViewport()
-		return m, nil
+
+		// Invoke amara to analyze and report to PM
+		m.processingAgents["amara"] = true
+		prompt := fmt.Sprintf("[System] 未着手のIssueが %d 件あります。GitHub Issueを確認し、@%s に状況を報告してください。", msg.count, pmAgent)
+		return m, m.runAgentAsync(prompt, "amara", 0)
 
 	case agentResponseMsg:
 		// エージェントの処理状態をクリア
