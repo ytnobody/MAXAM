@@ -36,6 +36,9 @@ type TaskResponse struct {
 	Err     error
 }
 
+// DefaultSessionTimeout is the maximum time a worker session can run before forced restart
+const DefaultSessionTimeout = 3 * time.Minute
+
 // Worker manages an agent's chat and task goroutines
 type Worker struct {
 	name   string
@@ -52,6 +55,10 @@ type Worker struct {
 	// Callback for building prompts with context
 	buildPrompt func(agentName, input string) string
 
+	// Session timeout management
+	sessionStart   time.Time
+	sessionTimeout time.Duration
+
 	// Mutex for protecting buildPrompt and context fields during Restart
 	mu sync.RWMutex
 }
@@ -60,14 +67,42 @@ type Worker struct {
 func NewWorker(name string, runner *agent.Runner) *Worker {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Worker{
-		name:     name,
-		runner:   runner,
-		state:    NewAgentState(),
-		chatChan: make(chan ChatRequest, 10),
-		taskChan: make(chan TaskRequest, 10),
-		ctx:      ctx,
-		cancel:   cancel,
+		name:           name,
+		runner:         runner,
+		state:          NewAgentState(),
+		chatChan:       make(chan ChatRequest, 10),
+		taskChan:       make(chan TaskRequest, 10),
+		ctx:            ctx,
+		cancel:         cancel,
+		sessionTimeout: DefaultSessionTimeout,
 	}
+}
+
+// SetSessionTimeout sets the session timeout duration
+func (w *Worker) SetSessionTimeout(d time.Duration) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.sessionTimeout = d
+}
+
+// SessionElapsed returns the time elapsed since the session started
+func (w *Worker) SessionElapsed() time.Duration {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if w.sessionStart.IsZero() {
+		return 0
+	}
+	return time.Since(w.sessionStart)
+}
+
+// IsSessionExpired returns true if the session has exceeded its timeout
+func (w *Worker) IsSessionExpired() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if w.sessionStart.IsZero() || w.sessionTimeout == 0 {
+		return false
+	}
+	return time.Since(w.sessionStart) > w.sessionTimeout
 }
 
 // SetPromptBuilder sets the callback for building prompts
@@ -79,6 +114,9 @@ func (w *Worker) SetPromptBuilder(fn func(agentName, input string) string) {
 
 // Start begins the chat and task goroutines
 func (w *Worker) Start() {
+	w.mu.Lock()
+	w.sessionStart = time.Now()
+	w.mu.Unlock()
 	w.wg.Add(2)
 	go w.chatLoop()
 	go w.taskLoop()
@@ -287,16 +325,83 @@ func (w *Worker) handleTask(req TaskRequest) {
 	}
 }
 
+// SessionTimeoutCallback is called when a worker's session times out
+type SessionTimeoutCallback func(workerName string)
+
 // Pool manages multiple workers
 type Pool struct {
 	workers map[string]*Worker
 	mu      sync.RWMutex
+
+	// Session timeout monitoring
+	monitorCtx       context.Context
+	monitorCancel    context.CancelFunc
+	monitorWg        sync.WaitGroup
+	onSessionTimeout SessionTimeoutCallback
 }
 
 // NewPool creates a new worker pool
 func NewPool() *Pool {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Pool{
-		workers: make(map[string]*Worker),
+		workers:       make(map[string]*Worker),
+		monitorCtx:    ctx,
+		monitorCancel: cancel,
+	}
+}
+
+// SetSessionTimeoutCallback sets the callback for session timeout events
+func (p *Pool) SetSessionTimeoutCallback(fn SessionTimeoutCallback) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.onSessionTimeout = fn
+}
+
+// StartSessionMonitor starts the session timeout monitoring goroutine
+// It checks all workers every checkInterval and triggers restart for expired sessions
+func (p *Pool) StartSessionMonitor(checkInterval time.Duration) {
+	p.monitorWg.Add(1)
+	go p.sessionMonitorLoop(checkInterval)
+}
+
+// sessionMonitorLoop periodically checks for expired sessions
+func (p *Pool) sessionMonitorLoop(checkInterval time.Duration) {
+	defer p.monitorWg.Done()
+	ticker := time.NewTicker(checkInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-p.monitorCtx.Done():
+			return
+		case <-ticker.C:
+			p.checkAndRestartExpiredSessions()
+		}
+	}
+}
+
+// checkAndRestartExpiredSessions checks all workers and restarts those with expired sessions
+func (p *Pool) checkAndRestartExpiredSessions() {
+	p.mu.RLock()
+	expiredWorkers := make([]string, 0)
+	for name, w := range p.workers {
+		if w.IsSessionExpired() {
+			expiredWorkers = append(expiredWorkers, name)
+		}
+	}
+	callback := p.onSessionTimeout
+	p.mu.RUnlock()
+
+	// Restart expired workers (outside the read lock)
+	for _, name := range expiredWorkers {
+		// Kill and restart
+		p.Kill(name)
+		p.Restart(name)
+
+		// Notify callback if set
+		if callback != nil {
+			callback(name)
+		}
 	}
 }
 
@@ -324,8 +429,12 @@ func (p *Pool) StartAll() {
 	}
 }
 
-// StopAll stops all workers
+// StopAll stops all workers and the session monitor
 func (p *Pool) StopAll() {
+	// Stop the session monitor first
+	p.monitorCancel()
+	p.monitorWg.Wait()
+
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	for _, w := range p.workers {
@@ -442,10 +551,13 @@ func (p *Pool) Restart(name string) bool {
 
 	// Create new context and restart goroutines
 	ctx, cancel := context.WithCancel(context.Background())
+	w.mu.Lock()
 	w.ctx = ctx
 	w.cancel = cancel
 	w.chatChan = make(chan ChatRequest, 10)
 	w.taskChan = make(chan TaskRequest, 10)
+	w.sessionStart = time.Now() // Reset session start time
+	w.mu.Unlock()
 	w.state.Resume()
 	w.wg.Add(2)
 	go w.chatLoop()

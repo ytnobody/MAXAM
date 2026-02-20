@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -339,6 +340,11 @@ func initialTuiModel(workDir string) tuiModel {
 		}
 	}
 
+	// Set session timeout callback for logging
+	workerPool.SetSessionTimeoutCallback(func(workerName string) {
+		log.Printf("[SESSION] %s: セッションタイムアウト（3分超過）でリスタート", workerName)
+	})
+
 	// Setup control command handler
 	controlHandler := control.NewHandler(workerPool)
 
@@ -562,9 +568,11 @@ type issueWatcherNotifyMsg struct {
 }
 
 func (m tuiModel) Init() tea.Cmd {
-	// Start worker pool
+	// Start worker pool with session timeout monitoring
 	if m.workerPool != nil {
 		m.workerPool.StartAll()
+		// Start session monitor to enforce 3-minute session timeout
+		m.workerPool.StartSessionMonitor(30 * time.Second)
 	}
 
 	// Start heartbeat monitoring

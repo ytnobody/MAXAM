@@ -336,6 +336,98 @@ func TestPool_Kill(t *testing.T) {
 	})
 }
 
+func TestWorkerSessionTimeout(t *testing.T) {
+	t.Run("session elapsed is tracked after start", func(t *testing.T) {
+		w := NewWorker("yuki", nil)
+
+		// Before start, elapsed should be 0
+		if w.SessionElapsed() != 0 {
+			t.Error("expected 0 elapsed before start")
+		}
+
+		w.Start()
+		defer w.Stop()
+
+		// Wait a bit and check elapsed
+		time.Sleep(50 * time.Millisecond)
+		elapsed := w.SessionElapsed()
+		if elapsed < 50*time.Millisecond {
+			t.Errorf("expected elapsed >= 50ms, got %v", elapsed)
+		}
+	})
+
+	t.Run("session expired returns true after timeout", func(t *testing.T) {
+		w := NewWorker("yuki", nil)
+		w.SetSessionTimeout(50 * time.Millisecond)
+		w.Start()
+		defer w.Stop()
+
+		// Should not be expired immediately
+		if w.IsSessionExpired() {
+			t.Error("expected session not to be expired immediately")
+		}
+
+		// Wait for timeout
+		time.Sleep(60 * time.Millisecond)
+		if !w.IsSessionExpired() {
+			t.Error("expected session to be expired after timeout")
+		}
+	})
+
+	t.Run("session is reset after restart", func(t *testing.T) {
+		pool := NewPool()
+		w := NewWorker("yuki", nil)
+		w.SetSessionTimeout(50 * time.Millisecond)
+		w.Start()
+		pool.Add(w)
+
+		// Wait for timeout
+		time.Sleep(60 * time.Millisecond)
+		if !w.IsSessionExpired() {
+			t.Error("precondition: expected session to be expired")
+		}
+
+		// Kill and restart
+		pool.Kill("yuki")
+		pool.Restart("yuki")
+
+		// Session should no longer be expired
+		if w.IsSessionExpired() {
+			t.Error("expected session not to be expired after restart")
+		}
+	})
+}
+
+func TestPoolSessionMonitor(t *testing.T) {
+	t.Run("monitor auto-restarts expired sessions", func(t *testing.T) {
+		pool := NewPool()
+		w := NewWorker("yuki", nil)
+		w.SetSessionTimeout(50 * time.Millisecond)
+		w.Start()
+		pool.Add(w)
+
+		// Track restarts via callback
+		restartCount := 0
+		pool.SetSessionTimeoutCallback(func(name string) {
+			restartCount++
+		})
+
+		// Start monitor with short interval
+		pool.StartSessionMonitor(30 * time.Millisecond)
+
+		// Wait for timeout + monitor check
+		time.Sleep(100 * time.Millisecond)
+
+		// Should have triggered at least one restart
+		if restartCount == 0 {
+			t.Error("expected at least one restart from session monitor")
+		}
+
+		// Clean up
+		pool.StopAll()
+	})
+}
+
 func TestPool(t *testing.T) {
 	t.Run("add and get worker", func(t *testing.T) {
 		pool := NewPool()
