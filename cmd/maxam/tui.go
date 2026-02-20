@@ -1134,21 +1134,28 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.processHeartbeatEvents()
 
 	case issueCheckTickMsg:
-		// Periodic issue check - fetch and notify
-		return m, tea.Batch(m.checkIssues(), m.tickIssueCheck())
+		// Periodic issue check - only active in auto mode
+		if m.modeManager != nil && m.modeManager.Current() == config.ModeAuto {
+			return m, tea.Batch(m.checkIssues(), m.tickIssueCheck())
+		}
+		// In non-auto mode, just keep the ticker running without checking
+		return m, m.tickIssueCheck()
 
 	case issueWatcherNotifyMsg:
-		// Unattended open issues detected - notify PM (mei by default)
+		// Unattended open issues detected - notify PM and Amara (analysis)
 		pmAgent := m.config.DefaultAgent
 		if pmAgent == "" {
 			pmAgent = "mei"
 		}
+		notifyContent := fmt.Sprintf("📋 オープンなIssue一覧:\n  未着手のIssueが %d 件あります\n\n@amara 着手されていないIssueがあります。確認をお願いします。", msg.count)
 		m.messages = append(m.messages, tuiMessage{
 			role:    "system",
-			content: fmt.Sprintf("📋 オープンなIssue一覧:\n  未着手のIssueが %d 件あります\n\n@%s 着手されていないIssueがあります。確認をお願いします。", msg.count, pmAgent),
+			content: notifyContent,
 		})
 		m.updateViewport()
-		return m, nil
+		// Invoke amara agent to analyze and report to PM
+		amaraPrompt := fmt.Sprintf("未着手のIssueが %d 件検出されました。@%s に報告し、優先順位付けと担当者割り当ての判断を依頼してください。", msg.count, pmAgent)
+		return m, m.runAgentAsync(amaraPrompt, "amara", 0)
 
 	case agentResponseMsg:
 		// エージェントの処理状態をクリア
